@@ -1,0 +1,21 @@
+schemas:
+  public:
+    tables:
+      users:
+        columns:
+          - { name: id,    type: integer, primary_key: true }
+          - { name: email, type: varchar, length: 255, nullable: false }
+          - { name: full_name, type: varchar, length: 120 }
+        rows:
+          - [1, "alice@example.com", "Alice Martin"]
+          - [2, "bob@example.com",   "Bob Dupont"]
+      orders:
+        columns:
+          - { name: id,       type: integer, primary_key: true }
+          - { name: user_id,  type: integer, nullable: false,
+              foreign_key: { table: users, column: id } }
+          - { name: amount_eur, type: numeric }
+        rows:
+          - [100, 1, 42.50]
+          - [101, 1, 9.99]
+          - [102, 2, 128.00]

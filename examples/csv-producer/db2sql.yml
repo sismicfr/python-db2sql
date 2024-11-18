@@ -1,0 +1,8 @@
+driver: csv
+target: postgres
+server:
+  options:
+    path: ./sample_data
+    schema: public
+dump:
+  default_data_format: insert

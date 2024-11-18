@@ -1,0 +1,25 @@
+[importlinter]
+root_package = db2sql
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = Clean architecture layer boundaries
+type = layers
+layers =
+    db2sql.interface
+    db2sql.infrastructure
+    db2sql.application
+    db2sql.domain
+
+[importlinter:contract:no-driver-in-core]
+name = No DB drivers or SQLAlchemy in domain/application
+type = forbidden
+source_modules =
+    db2sql.domain
+    db2sql.application
+forbidden_modules =
+    sqlalchemy
+    psycopg2
+    pymssql
+    pymysql
+    oracledb

@@ -1,0 +1,120 @@
+name: Bug report
+description: Report a defect in db2sql (incorrect SQL produced, crash, regression, …).
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more concrete your reproduction is,
+        the faster the fix lands. **Do not paste production credentials** — use placeholders.
+
+  - type: input
+    id: version
+    attributes:
+      label: db2sql version
+      description: Output of `db2sql --version`.
+      placeholder: "1.2.3"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Output of `python --version`.
+      placeholder: "3.12.7"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Ubuntu 24.04 / macOS 14.5 / Windows 11"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source database
+      options:
+        - SQLite
+        - MySQL
+        - PostgreSQL
+        - MSSQL
+        - Oracle
+        - other (specify below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target dialect / writer
+      options:
+        - postgres (dump file)
+        - postgres (live migrate)
+        - mssql (dump file)
+        - mssql (live migrate)
+        - other (specify below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: source_target_versions
+    attributes:
+      label: Source and target server versions
+      description: e.g. "MSSQL 2022 CU13", "Postgres 16.3". For SQLite, just say SQLite.
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Minimal configuration / command
+      description: |
+        Paste the smallest config file (YAML/JSON) and CLI invocation that reproduces the bug.
+        Redact credentials.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the error message, stack trace, or the offending SQL fragment.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Verbose logs (optional but very useful)
+      description: |
+        Re-run with `-VV` (debug) or `-VVV` (trace) and paste the relevant excerpt.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: I searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: I redacted credentials and sensitive data from the report.
+          required: true
+        - label: I am running a supported Python version (3.9 – 3.14).
+          required: true

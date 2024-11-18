@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "db2sql-sqlite-emitter"
+version = "0.1.0"
+description = "db2sql plugin: emit SQLite-flavoured SQL"
+requires-python = ">=3.9"
+dependencies = ["python-db2sql>=1"]
+
+[project.entry-points."db2sql.emitters"]
+sqlite = "sqlite_emitter:SqliteSqlEmitter"
+
+[tool.setuptools.packages.find]
+include = ["sqlite_emitter*"]

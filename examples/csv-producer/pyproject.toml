@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "db2sql-csv-producer"
+version = "0.1.0"
+description = "db2sql plugin: read a folder of CSV files as a source database"
+requires-python = ">=3.9"
+dependencies = ["python-db2sql>=1"]
+
+[project.entry-points."db2sql.readers"]
+csv = "csv_producer:build_reader"
+
+[tool.setuptools.packages.find]
+include = ["csv_producer*"]

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "db2sql-yaml-to-markdown"
+version = "0.1.0"
+description = "db2sql plugin pair: YAML schema reader + Markdown documentation emitter"
+requires-python = ">=3.9"
+dependencies = ["python-db2sql>=1", "pyyaml"]
+
+[project.entry-points."db2sql.readers"]
+yaml = "yaml_to_markdown:build_reader"
+
+[project.entry-points."db2sql.emitters"]
+markdown = "yaml_to_markdown:MarkdownEmitter"
+
+[tool.setuptools.packages.find]
+include = ["yaml_to_markdown*"]

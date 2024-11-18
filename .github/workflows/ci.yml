@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (black, isort, flake8, mypy, import-linter)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+      - name: Install lint dependencies
+        run: pip install -r requirements-lint.txt -e ".[all]"
+      - run: black --check --line-length 100 db2sql/ installer/
+      - run: isort --check-only db2sql/ installer/
+      - run: flake8 db2sql/ installer/
+      - run: mypy --ignore-missing-imports db2sql/ installer/
+      - run: lint-imports
+
+  tests:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # PR: 1 version pour feedback rapide. Push main: matrice complète pour
+        # la crédibilité du support Python 3.9–3.14 claimed dans pyproject.toml.
+        python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.12"]' || '["3.9","3.10","3.11","3.12","3.13","3.14"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+          allow-prereleases: true
+      - name: Install package and test dependencies
+        run: pip install -e ".[all]" pytest pytest-cov
+      - name: Run unit + cli tests
+        run: pytest tests/unit tests/cli --cov=db2sql --cov-fail-under=80
+
+  docs:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            docs/requirements.txt
+      - name: Install docs dependencies
+        run: pip install -e ".[all]" -r docs/requirements.txt
+      - name: Build HTML docs (warnings → errors)
+        run: sphinx-build -b html -W --keep-going docs docs/_build/html
+
+  functional:
+    name: Functional tests (MSSQL + Postgres, no Oracle)
+    runs-on: ubuntu-latest
+    # Light stack (~2-3 min boot). Runs on every push to main, and on PRs
+    # carrying the `run-functional` label. Oracle is on-demand only — see
+    # the `functional-oracle` job below.
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-functional'))
+    timeout-minutes: 15
+    env:
+      MSSQL_HOST: localhost
+      MSSQL_PORT: "1433"
+      MSSQL_USER: sa
+      MSSQL_SA_PASSWORD: "Db2sqlTest!Strong"
+      MSSQL_PASSWORD: "Db2sqlTest!Strong"
+      MSSQL_DATABASE: db2sqltest
+      PG_HOST: localhost
+      PG_PORT: "5432"
+      PG_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PG_PASSWORD: postgres
+      PG_DATABASE: db2sqltarget
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+
+      - name: Install package and test dependencies
+        run: pip install -e ".[all]" pytest
+
+      - name: Start docker stack (mssql + postgres) and wait until healthy
+        run: docker compose -f .docker/docker-compose.yml --profile functional up -d --wait
+
+      - name: Run functional tests (excluding Oracle)
+        run: pytest -m "functional and not oracle" tests/functional -v
+
+      - name: Capture docker stack logs on failure
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          docker compose -f .docker/docker-compose.yml --profile functional logs --no-color > artifacts/stack.log || true
+          docker compose -f .docker/docker-compose.yml --profile functional ps > artifacts/stack-ps.log || true
+
+      - name: Upload stack logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-stack-logs-functional
+          path: artifacts/
+          retention-days: 7
+
+      - name: Stop docker stack
+        if: always()
+        run: docker compose -f .docker/docker-compose.yml --profile functional down -v
+
+  functional-oracle:
+    name: Functional tests (Oracle, on-demand)
+    runs-on: ubuntu-latest
+    # Oracle image is ~10 GB and takes 3-5 min to become healthy. Only run
+    # when explicitly requested via the `run-oracle` label on a PR. Push
+    # events do NOT trigger this job — use the label even on hotfix PRs that
+    # touch the Oracle reader. (If you want a periodic safety run, add a
+    # `schedule:` trigger here — left out by default to keep CI minutes low.)
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'run-oracle')
+    timeout-minutes: 45
+    env:
+      ORACLE_HOST: localhost
+      ORACLE_PORT: "1521"
+      ORACLE_SERVICE: FREEPDB1
+      ORACLE_PASSWORD: oraclepw
+      ORACLE_APP_USER: apptest
+      ORACLE_APP_PASSWORD: apptestpw
+      ORACLE_USER: apptest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+
+      - name: Install package and test dependencies
+        run: pip install -e ".[all]" pytest
+
+      - name: Start Oracle container and wait until healthy
+        run: docker compose -f .docker/docker-compose.yml --profile oracle up -d --wait
+
+      - name: Run Oracle functional tests
+        run: pytest -m oracle tests/functional -v
+
+      - name: Capture Oracle container logs on failure
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          docker compose -f .docker/docker-compose.yml --profile oracle logs --no-color > artifacts/oracle.log || true
+          docker compose -f .docker/docker-compose.yml --profile oracle ps > artifacts/oracle-ps.log || true
+
+      - name: Upload Oracle logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-stack-logs-oracle
+          path: artifacts/
+          retention-days: 7
+
+      - name: Stop Oracle container
+        if: always()
+        run: docker compose -f .docker/docker-compose.yml --profile oracle down -v

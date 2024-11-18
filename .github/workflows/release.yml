@@ -1,0 +1,147 @@
+name: Release
+
+# Manually triggered release pipeline:
+#   1. python-semantic-release bumps the version (db2sql/_version.py +
+#      pyproject.toml), regenerates CHANGELOG.md from Conventional Commits,
+#      commits "chore: release vX.Y.Z", tags vX.Y.Z, pushes to main, and
+#      creates a GitHub release with the changelog as body + sdist/wheel
+#      attached.
+#   2. The sdist + wheel are published to PyPI via OIDC trusted publishing.
+#
+# Two downstream workflows are re-triggered automatically by the push made
+# in step 1 — BUT ONLY if a Personal Access Token (`RELEASE_TOKEN`) is
+# configured, since pushes signed with the default GITHUB_TOKEN do not
+# trigger further workflow runs:
+#   - docs.yml            (push to main)       → publishes Sphinx docs
+#   - release-binaries.yml (push of v* tag)    → builds & attaches the
+#                                                Windows/Linux/macOS
+#                                                standalone binaries to the
+#                                                release created here.
+#
+# If RELEASE_TOKEN is absent the workflow still publishes to PyPI, but the
+# user must re-trigger docs.yml and release-binaries.yml manually from the
+# Actions tab.
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force a specific bump (otherwise derived from commits)"
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      prerelease:
+        description: "Mark this release as a pre-release"
+        type: boolean
+        default: false
+      dry-run:
+        description: "Dry run: compute the next version without committing, tagging or publishing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Bump, changelog, tag, GitHub release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # commit + tag + create GitHub release
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version:  ${{ steps.release.outputs.version }}
+      tag:      ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # PAT is required so that the commit + tag pushed below re-trigger
+          # docs.yml (push to main) and release-binaries.yml (push of v* tag).
+          # Falls back to GITHUB_TOKEN so the workflow still completes if the
+          # PAT has not been configured yet — but downstream workflows will
+          # then need to be dispatched manually.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+
+      - name: Install project (needed by the configured build_command)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[all]"
+
+      - name: Run python-semantic-release
+        id: release
+        uses: python-semantic-release/python-semantic-release@v9
+        with:
+          github_token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # An empty `force` means "auto-derive from Conventional Commits".
+          force: ${{ inputs.force == 'auto' && '' || inputs.force }}
+          prerelease: ${{ inputs.prerelease }}
+          # When dry-run, semantic-release computes the next version but
+          # does NOT commit, tag, push or create a release.
+          push: ${{ inputs.dry-run == false }}
+          commit: ${{ inputs.dry-run == false }}
+          tag: ${{ inputs.dry-run == false }}
+          vcs_release: ${{ inputs.dry-run == false }}
+          changelog: true
+          build: true
+
+      - name: Upload Python distributions
+        if: steps.release.outputs.released == 'true' && inputs.dry-run == false
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Release summary"
+            echo ""
+            echo "- released: \`${{ steps.release.outputs.released }}\`"
+            echo "- version:  \`${{ steps.release.outputs.version }}\`"
+            echo "- tag:      \`${{ steps.release.outputs.tag }}\`"
+            echo "- dry-run:  \`${{ inputs.dry-run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  pypi:
+    name: Publish to PyPI (trusted publishing)
+    needs: release
+    if: needs.release.outputs.released == 'true' && inputs.dry-run == false
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/python-db2sql
+    permissions:
+      id-token: write   # OIDC token used by trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: List distributions
+        run: ls -la dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          # `skip-existing` makes the step idempotent if the release job is
+          # re-run after a partial PyPI upload (e.g. transient 5xx).
+          skip-existing: true

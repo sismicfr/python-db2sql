@@ -1,0 +1,5 @@
+sqlalchemy>=2
+colorama
+pyyaml
+pydantic>=2,<3
+questionary>=2

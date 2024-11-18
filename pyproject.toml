@@ -1,0 +1,191 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python-db2sql"
+version = "1.0.0"
+description = "Dump any supported source database into a PostgreSQL SQL file"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: POSIX",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+readme = "README.rst"
+authors = [{ name = "Jacques Raphanel", email = "jraphanel@sismic.fr" }]
+keywords = ["development", "database", "mssql", "mysql", "sqlite", "postgresql", "oracle"]
+dependencies = [
+    "sqlalchemy>=2",
+    "colorama",
+    "pyyaml",
+    "pydantic>=2,<3",
+    "questionary>=2",
+]
+
+[project.optional-dependencies]
+mssql = ["pymssql"]
+mysql = ["pymysql"]
+postgres = ["psycopg2-binary"]
+oracle = ["oracledb"]
+sqlite = []
+all = ["pymssql", "pymysql", "psycopg2-binary", "oracledb"]
+
+[project.scripts]
+db2sql = "db2sql.interface.cli:main"
+
+[project.entry-points."db2sql.readers"]
+mssql = "db2sql.infrastructure.persistence.mssql:build_reader"
+sqlite = "db2sql.infrastructure.persistence.sqlite:build_reader"
+mysql = "db2sql.infrastructure.persistence.mysql:build_reader"
+postgres = "db2sql.infrastructure.persistence.postgres:build_reader"
+oracle = "db2sql.infrastructure.persistence.oracle:build_reader"
+
+[project.entry-points."db2sql.emitters"]
+postgres = "db2sql.infrastructure.emit.postgres:PostgresSqlEmitter"
+mssql = "db2sql.infrastructure.emit.mssql:MssqlSqlEmitter"
+
+[project.entry-points."db2sql.writers"]
+postgres = "db2sql.infrastructure.writer.postgres:build_writer"
+mssql = "db2sql.infrastructure.writer.mssql:build_writer"
+
+[project.urls]
+changelog = "https://github.com/sismicfr/python-db2sql/blob/main/CHANGELOG.md"
+homepage = "https://github.com/sismicfr/python-db2sql"
+issues = "https://github.com/sismicfr/python-db2sql/issues"
+repository = "http://github.com/sismicfr/python-db2sql.git"
+
+[tool.black]
+line-length = 100
+
+[flake8]
+exclude = [".git",".venv",".tox","dist","docs","*egg,build"]
+max-line-length = 100
+# We ignore the following because we use black to handle code-formatting
+# E203: Whitespace before ':'
+# E501: Line too long
+# W503: Line break occurred before a binary operator
+ignore = ["E203","E501","W503"]
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+order_by_type = false
+
+[tool.mypy]
+files = "."
+exclude = ["build/.*"]
+
+# 'strict = true' is equivalent to the following:
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_subclassing_any = true
+disallow_untyped_decorators = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+no_implicit_reexport = true
+strict_equality = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+# The following need to have changes made to be able to enable them:
+# disallow_untyped_calls = true
+
+[[tool.mypy.overrides]] # Overrides for currently untyped modules
+module = []
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["colorama", "colorama.*"]
+ignore_missing_imports = true
+
+[tool.semantic_release]
+assets = []
+branch = "main"
+version_variables = ["db2sql/_version.py:__version__"]
+version_toml = ["pyproject.toml:project.version"]
+commit_message = "chore: release v{version}"
+commit_author = "semantic-release <semantic-release>"
+commit_parser = "angular"
+logging_use_named_masks = false
+major_on_zero = true
+tag_format = "v{version}"
+# Build the Python sdist + wheel only. Standalone PyInstaller binaries
+# require a per-OS runner and are produced by .github/workflows/release-binaries.yml,
+# which then attaches them to the GitHub release created here.
+build_command = "python -m pip install build && python -m build ."
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+  "ci",
+  "docs",
+  "feat",
+  "fix",
+  "perf",
+  "style",
+  "refactor",
+  "test",
+  "chore"
+]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+# `update` mode preserves the existing CHANGELOG.md content; new release
+# sections are inserted at `insertion_flag` instead of regenerating the
+# whole file from git history.
+mode = "update"
+insertion_flag = "<!-- version list -->"
+exclude_commit_patterns = []
+
+[tool.semantic_release.publish]
+dist_glob_patterns = ["dist/*"]
+upload_to_vcs_release = true
+
+[tool.pylint.messages_control]
+max-line-length = 100
+max-return = 10
+jobs = 0  # Use auto-detected number of multiple processes to speed up Pylint.
+disable = [
+    "missing-module-docstring",
+    "too-many-branches",
+    "too-many-statements",
+    "duplicate-code",
+]
+max-args=15 # Maximum number of arguments for function / method.
+max-attributes=20   # Maximum number of attributes for a class (see R0902).
+max-local=25    # Maximum number of local variables
+max-bool-expr=8 # Maximum number of boolean expressions in an if statement (see R0916).
+max-public-methods = 25 # Maximum number of public methods for a class (see R0904).
+max-positional-arguments = 10 # Minimum number of postional arguments
+min-public-methods=1 # Minimum number of public methods
+
+[tool.pytest.ini_options]
+xfail_strict = true
+markers = [
+    "functional: requires the docker stack (mssql/oracle/postgres) started via `make stack-up`",
+    "oracle: subset of functional tests that require the Oracle container (heavy, on-demand)",
+]
+
+# If 'log_cli=True' the following apply
+# NOTE: If set 'log_cli_level' to 'DEBUG' will show a log of all of the HTTP requests
+# made in functional tests.
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s.%(msecs)03d [%(levelname)8s] (%(filename)s:%(funcName)s:L%(lineno)s) %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"

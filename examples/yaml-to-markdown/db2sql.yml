@@ -1,0 +1,8 @@
+driver: yaml
+target: markdown
+server:
+  options:
+    path: ./schema.yml
+output_file: ./docs/schema.md
+dump:
+  default_data_format: insert

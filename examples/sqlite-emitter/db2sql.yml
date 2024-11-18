@@ -1,0 +1,7 @@
+driver: sqlite
+target: sqlite
+server:
+  options:
+    path: ./source.db
+dump:
+  default_data_format: insert

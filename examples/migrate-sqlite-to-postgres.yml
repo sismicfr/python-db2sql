@@ -1,0 +1,32 @@
+# Live migration example: SQLite source → PostgreSQL target.
+#
+# Run with:
+#   db2sql -C examples/migrate-sqlite-to-postgres.yml migrate
+#
+# The DDL produced is byte-identical to what you'd get from
+#   db2sql -C examples/migrate-sqlite-to-postgres.yml > dump.sql
+# followed by `psql -f dump.sql` — that's the invariant enforced by
+# tests/unit/test_sqlite_migrate.py::test_dump_ddl_equals_migrate_ddl.
+
+driver: sqlite
+target: postgres                 # selects both the SqlEmitter and the TargetWriter
+
+server:
+  dbname: ./sample.db            # SQLite file path
+
+target_server:
+  hostname: localhost
+  port: 5432
+  dbname: my_target_db
+  username: postgres
+  password: postgres
+
+dump:
+  preserve_case: true
+  mapping_schemas:
+    public: imported_from_sqlite
+
+migrate:
+  on_existing: fail              # fail | drop | truncate
+  transaction_mode: single       # single | per_table
+  batch_size: 1000

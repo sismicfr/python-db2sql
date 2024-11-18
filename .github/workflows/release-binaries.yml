@@ -1,0 +1,128 @@
+name: Release binaries
+
+# Build and publish standalone db2sql executables (Windows x64, Linux x64
+# built on Debian 12 for wide glibc compatibility, macOS arm64) whenever a
+# version tag is pushed. Also available on demand from the Actions tab.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      attach-to-release:
+        description: "Attach built artifacts to the GitHub release matching the current ref (if any)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # needed to upload assets to the matching release
+
+concurrency:
+  group: release-binaries-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    # Linux job runs inside a Debian 12 (bookworm) container so the binary
+    # only links against glibc 2.36 and remains runnable on Debian 12,
+    # Ubuntu 22.10+, RHEL/Rocky 9, and any newer distro. For Windows and
+    # macOS this evaluates to an empty string, which GitHub interprets as
+    # "run on the host runner, no container".
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-x86_64
+            os: windows-latest
+            python: "3.12"
+            shell: pwsh
+            archive-glob: "installer/dist/db2sql-*-windows-*.zip"
+            container: ""
+          - label: linux-x86_64
+            os: ubuntu-latest
+            python: "3.12"
+            shell: bash
+            archive-glob: "installer/dist/db2sql-*-linux-*.tar.gz"
+            container: "python:3.12-bookworm"
+          - label: macos-arm64
+            os: macos-14  # Apple Silicon runner
+            python: "3.12"
+            shell: bash
+            archive-glob: "installer/dist/db2sql-*-macos-*.tar.gz"
+            container: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Debian 12 container already ships with the right Python; only
+      # call setup-python on bare host runners (Windows / macOS).
+      - name: Set up Python (host runners only)
+        if: matrix.container == ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+
+      - name: Install OS build prerequisites (Debian 12)
+        if: matrix.container == 'python:3.12-bookworm'
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+              build-essential ca-certificates git
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Show toolchain info
+        shell: ${{ matrix.shell }}
+        run: |
+          python --version
+          python -c "import platform; print('platform:', platform.platform()); print('machine:', platform.machine())"
+
+      - name: Show glibc version (Linux)
+        if: runner.os == 'Linux'
+        run: ldd --version | head -1
+
+      - name: Install build dependencies
+        shell: ${{ matrix.shell }}
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install -e ".[all]"
+          python -m pip install "pyinstaller>=6"
+
+      - name: Build standalone binary
+        shell: ${{ matrix.shell }}
+        run: python installer/build.py --archive
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db2sql-${{ matrix.label }}
+          path: ${{ matrix.archive-glob }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Attach binaries to release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.attach-to-release == true
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Upload to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          fail_on_unmatched_files: true

@@ -1,0 +1,6 @@
+__author__ = "Jacques Raphanel"
+__copyright__ = "Copyright 2024 SISMIC"
+__email__ = "jraphanel@sismic.fr"
+__license__ = "MIT"
+__title__ = "db2sql"
+__version__ = "0.0.1"

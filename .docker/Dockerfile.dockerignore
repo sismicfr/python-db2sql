@@ -1,0 +1,12 @@
+.venv/
+.tox/
+.git/
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+.coverage
+installer/dist/
+node_modules/
+__pycache__/

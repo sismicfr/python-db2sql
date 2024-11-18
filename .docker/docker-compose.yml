@@ -1,0 +1,117 @@
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
+    image: python-db2sql-dev:py311
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+    environment:
+      DEVCONTAINER: "true"
+      HOME: /home/dev
+      MSSQL_HOST: mssql
+      MSSQL_PORT: "1433"
+      MSSQL_USER: sa
+      MSSQL_PASSWORD: ${MSSQL_SA_PASSWORD:-Db2sqlTest!Strong}
+      MSSQL_DATABASE: db2sqltest
+      ORACLE_HOST: oracle
+      ORACLE_PORT: "1521"
+      ORACLE_SERVICE: FREEPDB1
+      ORACLE_USER: ${ORACLE_APP_USER:-apptest}
+      ORACLE_PASSWORD: ${ORACLE_APP_PASSWORD:-apptestpw}
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: postgres
+      PG_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PG_DATABASE: db2sqltarget
+    init: true
+
+  mssql:
+    profiles: ["functional"]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Db2sqlTest!Strong}
+      MSSQL_PID: Developer
+    ports:
+      - "${MSSQL_PORT:-1433}:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -Q "SELECT 1" -C -No
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  mssql-init:
+    profiles: ["functional"]
+    image: mcr.microsoft.com/mssql-tools
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Db2sqlTest!Strong}
+    volumes:
+      - ./mssql/init:/init:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        for f in /init/*.sql; do
+          echo "[mssql-init] applying $$f"
+          /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P "$$MSSQL_SA_PASSWORD" -b -i "$$f"
+        done
+        echo "[mssql-init] done"
+    restart: "no"
+
+  oracle:
+    # Heavy image (~10 GB, 3-5 min boot) — kept in its own profile so the
+    # default `--profile functional` stack stays lightweight. Use
+    # `--profile functional --profile oracle` to bring everything up.
+    profiles: ["oracle"]
+    image: gvenzl/oracle-free:23-slim
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:-oraclepw}
+      APP_USER: ${ORACLE_APP_USER:-apptest}
+      APP_USER_PASSWORD: ${ORACLE_APP_PASSWORD:-apptestpw}
+    ports:
+      - "${ORACLE_PORT:-1521}:1521"
+    volumes:
+      - ./oracle/init:/container-entrypoint-initdb.d:ro
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+
+  postgres:
+    profiles: ["functional"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: db2sqltarget
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db2sqltarget"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mssql-data:
+  oracle-data:
+  postgres-data:

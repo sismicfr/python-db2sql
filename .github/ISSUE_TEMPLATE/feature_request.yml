@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a new capability, adapter, or enhancement.
+title: "[feat] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an idea. Focus on the **problem you're trying to solve**;
+        a concrete use case beats a generic "add support for X" any day.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do today that db2sql doesn't let you do, or makes painful?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: |
+        How would you like it to work? CLI flag, config option, new adapter, plugin entry-point?
+        A small example of the desired YAML / command goes a long way.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds did you try? What other tools / approaches did you compare with?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      description: Roughly, where does this change land?
+      options:
+        - New source reader (new DB to read from)
+        - New emitter / writer (new target dialect)
+        - CLI ergonomics
+        - Configuration schema
+        - Documentation
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: I searched existing issues and discussions before opening this one.
+          required: true
+        - label: I described a use case, not just a feature.
+          required: true
