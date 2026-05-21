@@ -44,14 +44,16 @@ docker-clean: ## Remove the docker dev image and associated resources
 # `oracle` profile because the image is ~10 GB and takes 3-5 min to boot.
 # `stack-up` keeps the historical "everything" behaviour for local dev.
 
-stack-up: ## Start the full functional DB stack (mssql, postgres, oracle) and wait until healthy
-	$(DOCKER_ENV) $(DOCKER_COMPOSE) --profile functional --profile oracle up -d --wait
+stack-up: ## Start the full functional DB stack (mssql, mysql, postgres, oracle) and wait until healthy
+	$(DOCKER_ENV) $(DOCKER_COMPOSE) --profile functional --profile oracle up -d --wait mssql mysql postgres oracle
+	$(DOCKER_ENV) $(DOCKER_COMPOSE) --profile functional run --rm mssql-init
 
-stack-up-light: ## Start only the lightweight functional DB stack (mssql, postgres) — no Oracle
-	$(DOCKER_ENV) $(DOCKER_COMPOSE) --profile functional up -d --wait
+stack-up-light: ## Start only the lightweight functional DB stack (mssql, mysql, postgres) — no Oracle
+	$(DOCKER_ENV) $(DOCKER_COMPOSE) --profile functional up -d --wait mssql mysql postgres
+	$(DOCKER_ENV) $(DOCKER_COMPOSE) --profile functional run --rm mssql-init
 
 stack-up-oracle: ## Start only the Oracle container (heavy, ~3-5 min boot) — no mssql/postgres
-	$(DOCKER_ENV) $(DOCKER_COMPOSE) --profile oracle up -d --wait
+	$(DOCKER_ENV) $(DOCKER_COMPOSE) --profile oracle up -d --wait oracle
 
 stack-down: ## Stop the functional DB stack (keep volumes)
 	$(DOCKER_COMPOSE) --profile functional --profile oracle down

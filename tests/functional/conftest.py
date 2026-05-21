@@ -83,3 +83,39 @@ def oracle_config() -> AppConfig:
             options={"service_name": env["ORACLE_SERVICE"], "owner": env["ORACLE_USER"]},
         ),
     )
+
+
+@pytest.fixture(scope="session")
+def postgres_config() -> AppConfig:
+    env = _require_env(
+        "PG_HOST", "PG_PORT", "PG_USER", "PG_PASSWORD", "PG_DATABASE"
+    )
+    _check_tcp(env["PG_HOST"], int(env["PG_PORT"]))
+    return AppConfig(
+        driver="postgres",
+        server=ServerConfig(
+            hostname=env["PG_HOST"],
+            port=int(env["PG_PORT"]),
+            username=env["PG_USER"],
+            password=env["PG_PASSWORD"],
+            dbname=env["PG_DATABASE"],
+        ),
+    )
+
+
+@pytest.fixture(scope="session")
+def mysql_config() -> AppConfig:
+    env = _require_env(
+        "MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE"
+    )
+    _check_tcp(env["MYSQL_HOST"], int(env["MYSQL_PORT"]))
+    return AppConfig(
+        driver="mysql",
+        server=ServerConfig(
+            hostname=env["MYSQL_HOST"],
+            port=int(env["MYSQL_PORT"]),
+            username=env["MYSQL_USER"],
+            password=env["MYSQL_PASSWORD"],
+            dbname=env["MYSQL_DATABASE"],
+        ),
+    )

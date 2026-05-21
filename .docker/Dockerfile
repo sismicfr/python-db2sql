@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --no-cache-dir tox
+
 RUN groupadd --gid ${GROUP_ID} dev \
     && useradd --uid ${USER_ID} --gid ${GROUP_ID} --create-home --shell /bin/bash dev
 

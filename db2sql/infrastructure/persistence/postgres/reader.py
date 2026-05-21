@@ -69,9 +69,9 @@ class PostgresSourceReader:
             )
         )
         for row in rows:
-            if row.TABLE_SCHEMA not in database.schemas:
-                database.add_schema(Schema(row.TABLE_SCHEMA))
-            database.add_table(row.TABLE_SCHEMA, Table(row.TABLE_NAME))
+            if row.table_schema not in database.schemas:
+                database.add_schema(Schema(row.table_schema))
+            database.add_table(row.table_schema, Table(row.table_name))
 
     def _read_columns(self, database: Database) -> None:
         rows = self._ensure_session().execute(
@@ -85,19 +85,19 @@ class PostgresSourceReader:
             )
         )
         for row in rows:
-            table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
+            table = database.get_table(row.table_schema, row.table_name)
             if table is None:
                 continue
             column = Column(
-                name=row.COLUMN_NAME,
-                type=row.DATA_TYPE,
-                default=row.COLUMN_DEFAULT,
-                nullable=row.IS_NULLABLE == "YES",
-                char_length=row.CHARACTER_MAXIMUM_LENGTH or -1,
-                precision=row.NUMERIC_PRECISION,
-                scale=row.NUMERIC_SCALE,
+                name=row.column_name,
+                type=row.data_type,
+                default=row.column_default,
+                nullable=row.is_nullable == "YES",
+                char_length=row.character_maximum_length or -1,
+                precision=row.numeric_precision,
+                scale=row.numeric_scale,
             )
-            if row.IS_IDENTITY == "YES":
+            if row.is_identity == "YES":
                 column.identity = True
             table.add_column(column)
 
@@ -114,11 +114,11 @@ class PostgresSourceReader:
             )
         )
         for row in rows:
-            table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
+            table = database.get_table(row.table_schema, row.table_name)
             if table:
-                column = table.get_column(row.COLUMN_NAME)
+                column = table.get_column(row.column_name)
                 if column:
-                    column.constraint = row.CONSTRAINT_TYPE
+                    column.constraint = row.constraint_type
 
     def _read_foreign_keys(self, database: Database) -> None:
         rows = self._ensure_session().execute(
@@ -138,13 +138,13 @@ class PostgresSourceReader:
             )
         )
         for row in rows:
-            table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
+            table = database.get_table(row.table_schema, row.table_name)
             if table is None:
                 continue
-            column = table.get_column(row.COLUMN_NAME)
+            column = table.get_column(row.column_name)
             if column is None:
                 continue
-            column.foreign_key = ForeignKey(row.REF_SCHEMA, row.REF_TABLE, row.REF_COLUMN)
+            column.foreign_key = ForeignKey(row.ref_schema, row.ref_table, row.ref_column)
 
     def _read_indexes(self, database: Database) -> None:
         rows = self._ensure_session().execute(
