@@ -28,61 +28,61 @@ def _build_reader(**server_kwargs) -> OracleSourceReader:
 
 def _full_plan() -> FakeSession:
     session = FakeSession()
-    session.add("FROM ALL_TABLES", [FakeRow(OWNER="HR", TABLE_NAME="EMP")])
+    session.add("FROM ALL_TABLES", [FakeRow(owner="HR", table_name="EMP")])
     session.add(
         "FROM ALL_TABLES t",
-        [FakeRow(OWNER="HR", TABLE_NAME="EMP")],
+        [FakeRow(owner="HR", table_name="EMP")],
     )
     session.add(
         "FROM ALL_TAB_COLUMNS",
         [
             FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="ID",
-                DATA_DEFAULT=None,
-                NULLABLE="N",
-                DATA_TYPE="NUMBER",
-                DATA_LENGTH=22,
-                CHAR_LENGTH=0,
-                DATA_PRECISION=10,
-                DATA_SCALE=0,
+                owner="HR",
+                table_name="EMP",
+                column_name="ID",
+                data_default=None,
+                nullable="N",
+                data_type="NUMBER",
+                data_length=22,
+                char_length=0,
+                data_precision=10,
+                data_scale=0,
             ),
             FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="NAME",
-                DATA_DEFAULT="'unknown' ",
-                NULLABLE="Y",
-                DATA_TYPE="VARCHAR2",
-                DATA_LENGTH=100,
-                CHAR_LENGTH=100,
-                DATA_PRECISION=None,
-                DATA_SCALE=None,
+                owner="HR",
+                table_name="EMP",
+                column_name="NAME",
+                data_default="'unknown' ",
+                nullable="Y",
+                data_type="VARCHAR2",
+                data_length=100,
+                char_length=100,
+                data_precision=None,
+                data_scale=None,
             ),
             FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="HIRED_AT",
-                DATA_DEFAULT=None,
-                NULLABLE="Y",
-                DATA_TYPE="DATE",
-                DATA_LENGTH=7,
-                CHAR_LENGTH=0,
-                DATA_PRECISION=None,
-                DATA_SCALE=None,
+                owner="HR",
+                table_name="EMP",
+                column_name="HIRED_AT",
+                data_default=None,
+                nullable="Y",
+                data_type="DATE",
+                data_length=7,
+                char_length=0,
+                data_precision=None,
+                data_scale=None,
             ),
             FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="DEPT_ID",
-                DATA_DEFAULT=None,
-                NULLABLE="Y",
-                DATA_TYPE="NUMBER",
-                DATA_LENGTH=22,
-                CHAR_LENGTH=0,
-                DATA_PRECISION=10,
-                DATA_SCALE=0,
+                owner="HR",
+                table_name="EMP",
+                column_name="DEPT_ID",
+                data_default=None,
+                nullable="Y",
+                data_type="NUMBER",
+                data_length=22,
+                char_length=0,
+                data_precision=10,
+                data_scale=0,
             ),
         ],
     )
@@ -90,34 +90,34 @@ def _full_plan() -> FakeSession:
         "c.CONSTRAINT_TYPE = 'R'",
         [
             FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="DEPT_ID",
-                POSITION=1,
-                REF_OWNER="HR",
-                REF_TABLE="DEPT",
-                REF_COLUMN="ID",
+                owner="HR",
+                table_name="EMP",
+                column_name="DEPT_ID",
+                position=1,
+                ref_owner="HR",
+                ref_table="DEPT",
+                ref_column="ID",
             )
         ],
     )
     session.add(
         "c.CONSTRAINT_TYPE IN ('P', 'U')",
-        [FakeRow(OWNER="HR", TABLE_NAME="EMP", COLUMN_NAME="ID", CONSTRAINT_TYPE="PRIMARY KEY")],
+        [FakeRow(owner="HR", table_name="EMP", column_name="ID", constraint_type="PRIMARY KEY")],
     )
     session.add(
         "FROM ALL_INDEXES",
         [
             FakeRow(
-                TABLE_OWNER="HR",
-                TABLE_NAME="EMP",
-                INDEX_NAME="IDX_EMP_NAME",
-                COLUMN_NAME="NAME",
+                table_owner="HR",
+                table_name="EMP",
+                index_name="IDX_EMP_NAME",
+                column_name="NAME",
             )
         ],
     )
     session.add(
         "FROM ALL_TAB_IDENTITY_COLS",
-        [FakeRow(OWNER="HR", TABLE_NAME="EMP", COLUMN_NAME="ID")],
+        [FakeRow(owner="HR", table_name="EMP", column_name="ID")],
     )
     return session
 
@@ -186,8 +186,8 @@ def test_collect_metadata_builds_full_database() -> None:
 def test_owner_option_constrains_schema_filter() -> None:
     reader = _build_reader(options={"owner": "hr"})
     session = FakeSession()
-    session.add("FROM ALL_TABLES", [FakeRow(OWNER="HR", TABLE_NAME="EMP")])
-    session.add("FROM ALL_TABLES t", [FakeRow(OWNER="HR", TABLE_NAME="EMP")])
+    session.add("FROM ALL_TABLES", [FakeRow(owner="HR", table_name="EMP")])
+    session.add("FROM ALL_TABLES t", [FakeRow(owner="HR", table_name="EMP")])
     session.add("FROM ALL_TAB_COLUMNS", [])
     session.add("c.CONSTRAINT_TYPE = 'R'", [])
     session.add("c.CONSTRAINT_TYPE IN ('P', 'U')", [])
@@ -219,7 +219,7 @@ def test_collect_metadata_wraps_connection_errors() -> None:
 def test_iter_rows_uses_oracle_fetch_first_for_limit() -> None:
     reader = _build_reader()
     session = FakeSession()
-    session.add("FETCH FIRST", [FakeRow(ID=1, NAME="Alice")])
+    session.add("FETCH FIRST", [FakeRow(id=1, name="Alice")])
     install_fake_session(reader, session)
 
     from db2sql.domain.model import Column, Table
@@ -239,22 +239,22 @@ def test_identity_columns_query_is_optional() -> None:
     """Older Oracle versions lack ALL_TAB_IDENTITY_COLS — the reader must tolerate it."""
     reader = _build_reader()
     session = FakeSession()
-    session.add("FROM ALL_TABLES", [FakeRow(OWNER="HR", TABLE_NAME="EMP")])
-    session.add("FROM ALL_TABLES t", [FakeRow(OWNER="HR", TABLE_NAME="EMP")])
+    session.add("FROM ALL_TABLES", [FakeRow(owner="HR", table_name="EMP")])
+    session.add("FROM ALL_TABLES t", [FakeRow(owner="HR", table_name="EMP")])
     session.add(
         "FROM ALL_TAB_COLUMNS",
         [
             FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="ID",
-                DATA_DEFAULT=None,
-                NULLABLE="N",
-                DATA_TYPE="NUMBER",
-                DATA_LENGTH=22,
-                CHAR_LENGTH=0,
-                DATA_PRECISION=10,
-                DATA_SCALE=0,
+                owner="HR",
+                table_name="EMP",
+                column_name="ID",
+                data_default=None,
+                nullable="N",
+                data_type="NUMBER",
+                data_length=22,
+                char_length=0,
+                data_precision=10,
+                data_scale=0,
             )
         ],
     )
@@ -315,77 +315,77 @@ def test_collect_metadata_skips_rows_for_missing_columns_and_tables() -> None:
 
     reader = _build_reader()
     session = _FakeSession()
-    session.add("DISTINCT OWNER FROM ALL_TABLES", [_FakeRow(OWNER="HR")])
-    session.add("FROM ALL_TABLES t", [_FakeRow(OWNER="HR", TABLE_NAME="EMP")])
+    session.add("DISTINCT OWNER FROM ALL_TABLES", [_FakeRow(owner="HR")])
+    session.add("FROM ALL_TABLES t", [_FakeRow(owner="HR", table_name="EMP")])
     session.add(
         "FROM ALL_TAB_COLUMNS",
         [
             _FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="ID",
-                DATA_DEFAULT=None,
-                NULLABLE="N",
-                DATA_TYPE="NUMBER",
-                DATA_LENGTH=22,
-                CHAR_LENGTH=0,
-                DATA_PRECISION=10,
-                DATA_SCALE=0,
+                owner="HR",
+                table_name="EMP",
+                column_name="ID",
+                data_default=None,
+                nullable="N",
+                data_type="NUMBER",
+                data_length=22,
+                char_length=0,
+                data_precision=10,
+                data_scale=0,
             ),
             # Char column with 0 length → exercises the "if not char_length" branch
             _FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="MEMO",
-                DATA_DEFAULT=None,
-                NULLABLE="Y",
-                DATA_TYPE="CHAR",
-                DATA_LENGTH=10,
-                CHAR_LENGTH=0,
-                DATA_PRECISION=None,
-                DATA_SCALE=None,
+                owner="HR",
+                table_name="EMP",
+                column_name="MEMO",
+                data_default=None,
+                nullable="Y",
+                data_type="CHAR",
+                data_length=10,
+                char_length=0,
+                data_precision=None,
+                data_scale=None,
             ),
             # Column for an unknown table — must be ignored
             _FakeRow(
-                OWNER="HR",
-                TABLE_NAME="GHOST",
-                COLUMN_NAME="X",
-                DATA_DEFAULT=None,
-                NULLABLE="Y",
-                DATA_TYPE="NUMBER",
-                DATA_LENGTH=22,
-                CHAR_LENGTH=0,
-                DATA_PRECISION=10,
-                DATA_SCALE=0,
+                owner="HR",
+                table_name="GHOST",
+                column_name="X",
+                data_default=None,
+                nullable="Y",
+                data_type="NUMBER",
+                data_length=22,
+                char_length=0,
+                data_precision=10,
+                data_scale=0,
             ),
         ],
     )
     # Constraint referencing a non-existent column — must be skipped
     session.add(
         "c.CONSTRAINT_TYPE IN ('P', 'U')",
-        [_FakeRow(OWNER="HR", TABLE_NAME="EMP", COLUMN_NAME="MISSING", CONSTRAINT_TYPE="UNIQUE")],
+        [_FakeRow(owner="HR", table_name="EMP", column_name="MISSING", constraint_type="UNIQUE")],
     )
     # FK referencing a non-existent column AND a non-existent table
     session.add(
         "c.CONSTRAINT_TYPE = 'R'",
         [
             _FakeRow(
-                OWNER="HR",
-                TABLE_NAME="EMP",
-                COLUMN_NAME="MISSING",
-                POSITION=1,
-                REF_OWNER="HR",
-                REF_TABLE="DEPT",
-                REF_COLUMN="ID",
+                owner="HR",
+                table_name="EMP",
+                column_name="MISSING",
+                position=1,
+                ref_owner="HR",
+                ref_table="DEPT",
+                ref_column="ID",
             ),
             _FakeRow(
-                OWNER="HR",
-                TABLE_NAME="GHOST",
-                COLUMN_NAME="X",
-                POSITION=1,
-                REF_OWNER="HR",
-                REF_TABLE="DEPT",
-                REF_COLUMN="ID",
+                owner="HR",
+                table_name="GHOST",
+                column_name="X",
+                position=1,
+                ref_owner="HR",
+                ref_table="DEPT",
+                ref_column="ID",
             ),
         ],
     )
@@ -393,7 +393,7 @@ def test_collect_metadata_skips_rows_for_missing_columns_and_tables() -> None:
     # Identity row pointing to an unknown column
     session.add(
         "FROM ALL_TAB_IDENTITY_COLS",
-        [_FakeRow(OWNER="HR", TABLE_NAME="EMP", COLUMN_NAME="MISSING")],
+        [_FakeRow(owner="HR", table_name="EMP", column_name="MISSING")],
     )
     install_fake_session(reader, session)
     db = reader.collect_metadata()
@@ -410,7 +410,7 @@ def test_collect_metadata_wraps_unexpected_exception_post_schemas() -> None:
 
     reader = _build_reader()
     session = _FakeSession()
-    session.add("DISTINCT OWNER FROM ALL_TABLES", [_FakeRow(OWNER="HR")])
+    session.add("DISTINCT OWNER FROM ALL_TABLES", [_FakeRow(owner="HR")])
 
     original_execute = session.execute
 
