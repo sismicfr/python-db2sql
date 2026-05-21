@@ -146,12 +146,12 @@ VSVersionInfo(
 
 def _run_pyinstaller(args: list[str], env: dict[str, str]) -> None:
     cmd = [sys.executable, "-m", "PyInstaller", *args]
-    print("→", " ".join(cmd), flush=True)
+    print("->", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True, env=env)
 
 
 def _smoke_test(binary: Path) -> None:
-    print(f"→ smoke test: {binary} --version", flush=True)
+    print(f"-> smoke test: {binary} --version", flush=True)
     completed = subprocess.run(
         [str(binary), "--version"],
         check=False,
@@ -276,7 +276,7 @@ def build(
     if should_archive:
         archive_stem = f"{EXE_NAME}-{__version__}-{_platform_tag()}"
         archive_path = _archive(binary, archive_stem)
-        print(f"→ archived: {archive_path}", flush=True)
+        print(f"-> archived: {archive_path}", flush=True)
 
     return binary
 
