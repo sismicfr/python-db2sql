@@ -68,8 +68,6 @@ def _apply_primary_key(columns: List[Column], primary_key: Iterable[str]) -> Non
     for name in pk:
         column = by_name.get(name)
         if column is None:
-            raise ValueError(
-                f"primary_key references unknown column '{name}' in view export"
-            )
+            raise ValueError(f"primary_key references unknown column '{name}' in view export")
         column.constraint = "PRIMARY KEY"
         column.nullable = False

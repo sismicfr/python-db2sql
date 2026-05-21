@@ -57,9 +57,7 @@ class MigrateDatabaseUseCase:
         database = self._reader.collect_metadata()
         database = filter_database(database, self._request.filter_rules)
         if self._request.views:
-            self._logger.info(
-                f"materializing {len(self._request.views)} view export(s)"
-            )
+            self._logger.info(f"materializing {len(self._request.views)} view export(s)")
             materialize_views(self._reader, database, self._request.views)
         self._emit_and_load(database)
         return database
@@ -84,18 +82,14 @@ class MigrateDatabaseUseCase:
 
     def _load_data(self, database: Database) -> None:
         options = self._request.options
-        view_options = {
-            (v.target_schema, v.target_table): v for v in self._request.views
-        }
+        view_options = {(v.target_schema, v.target_table): v for v in self._request.views}
         for schema_name, schema in database.schemas.items():
             for table_name, table in schema.tables.items():
                 view = view_options.get((schema_name, table_name))
                 limit = self._resolve_limit(view, options, schema_name, table_name)
                 if limit == 0:
                     continue
-                self._logger.info(
-                    f"bulk-loading rows into {schema_name}.{table_name}"
-                )
+                self._logger.info(f"bulk-loading rows into {schema_name}.{table_name}")
                 if table.source_query is not None:
                     rows = self._reader.iter_query_rows(table.source_query, limit=limit)
                 else:

@@ -1,7 +1,9 @@
 """Logging adapter — ConsoleLogger implements the application Logger port."""
 
-from .colors import Palette, color_enabled, init_colorama, is_terminal
+from .colors import color_enabled, init_colorama, is_terminal, Palette
 from .console_logger import (
+    ConsoleLogger,
+    InvalidLogLevel,
     LEVEL_DEBUG,
     LEVEL_ERROR,
     LEVEL_NOTICE,
@@ -10,8 +12,6 @@ from .console_logger import (
     LEVEL_TRACE,
     LEVEL_VERBOSE,
     LEVEL_WARNING,
-    ConsoleLogger,
-    InvalidLogLevel,
 )
 
 __all__ = [

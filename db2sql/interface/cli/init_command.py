@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -100,7 +99,7 @@ def _ask_csv_list(prompter: Prompter, message: str) -> List[str]:
         if not prompter.confirm("Add more entries?", default=False):
             break
     # de-duplicate while preserving order
-    seen: set = set()
+    seen: set[str] = set()
     deduped: List[str] = []
     for item in accumulated:
         if item not in seen:
@@ -138,9 +137,7 @@ def _ask_server(prompter: Prompter, driver: str) -> Dict[str, Any]:
     elif driver == "oracle":
         server["hostname"] = prompter.text("Hostname", validate=_validate_required)
         port_default = str(_DEFAULT_PORTS.get(driver, 1521))
-        server["port"] = int(
-            prompter.text("Port", default=port_default, validate=_validate_int)
-        )
+        server["port"] = int(prompter.text("Port", default=port_default, validate=_validate_int))
         server["username"] = prompter.text("Username", default="")
         mode = prompter.select(
             "Identify the database via",
@@ -158,9 +155,7 @@ def _ask_server(prompter: Prompter, driver: str) -> Dict[str, Any]:
         # mssql / mysql / postgres / unknown network driver
         server["hostname"] = prompter.text("Hostname", validate=_validate_required)
         port_default = str(_DEFAULT_PORTS.get(driver, 0)) if driver in _DEFAULT_PORTS else ""
-        server["port"] = int(
-            prompter.text("Port", default=port_default, validate=_validate_int)
-        )
+        server["port"] = int(prompter.text("Port", default=port_default, validate=_validate_int))
         server["dbname"] = prompter.text("Database name", validate=_validate_required)
         server["username"] = prompter.text("Username", default="")
         password = _ask_password(prompter)
@@ -200,9 +195,7 @@ def _ask_mapping_schemas(prompter: Prompter) -> Dict[str, str]:
 def _ask_table_overrides(prompter: Prompter) -> Dict[str, Dict[str, Any]]:
     tables: Dict[str, Dict[str, Any]] = {}
     while prompter.confirm("Add an override for a specific table?", default=False):
-        name = prompter.text(
-            "Table name (bare or schema.table)", validate=_validate_required
-        )
+        name = prompter.text("Table name (bare or schema.table)", validate=_validate_required)
         override: Dict[str, Any] = {}
         fmt_choice = prompter.select(
             f"data_format for '{name}'",
@@ -211,9 +204,7 @@ def _ask_table_overrides(prompter: Prompter) -> Dict[str, Dict[str, Any]]:
         )
         if fmt_choice != "(inherit)":
             override["data_format"] = fmt_choice
-        limit_raw = prompter.text(
-            f"limit_records for '{name}' (empty = inherit)", default=""
-        )
+        limit_raw = prompter.text(f"limit_records for '{name}' (empty = inherit)", default="")
         if limit_raw.strip():
             try:
                 override["limit_records"] = int(limit_raw)
@@ -229,9 +220,7 @@ def _ask_table_overrides(prompter: Prompter) -> Dict[str, Dict[str, Any]]:
     return tables
 
 
-def _ask_dump_section(
-    prompter: Prompter, target: str
-) -> Tuple[Dict[str, Any], DataFormat]:
+def _ask_dump_section(prompter: Prompter, target: str) -> Tuple[Dict[str, Any], DataFormat]:
     dump: Dict[str, Any] = {}
 
     if prompter.confirm("Preserve identifier case?", default=False):
@@ -283,9 +272,7 @@ def build_config(prompter: Prompter) -> Tuple[AppConfig, OutputFormat]:
     if not emitters:
         raise InitAborted()
 
-    output_format = prompter.select(
-        "Output format", choices=["yaml", "json"], default="yaml"
-    )
+    output_format = prompter.select("Output format", choices=["yaml", "json"], default="yaml")
 
     driver = prompter.select(
         "Source database driver",
@@ -301,9 +288,7 @@ def build_config(prompter: Prompter) -> Tuple[AppConfig, OutputFormat]:
     server = _ask_server(prompter, driver)
     dump, _fmt = _ask_dump_section(prompter, target)
 
-    output_file = prompter.text(
-        "Default SQL output file (empty to write to stdout)", default=""
-    )
+    output_file = prompter.text("Default SQL output file (empty to write to stdout)", default="")
 
     data: Dict[str, Any] = {
         "driver": driver,
@@ -327,7 +312,8 @@ def serialize_config(config: AppConfig, output_format: OutputFormat) -> str:
     payload = config.model_dump(mode="json", exclude_defaults=True)
     if output_format == "json":
         return json.dumps(payload, indent=2, sort_keys=False) + "\n"
-    return yaml.safe_dump(payload, sort_keys=False, default_flow_style=False)
+    rendered: str = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False)
+    return rendered
 
 
 def _write_output(
@@ -342,9 +328,7 @@ def _write_output(
 
     path = Path(output_path)
     if path.exists() and not force:
-        if not prompter.confirm(
-            f"File {path} already exists. Overwrite?", default=False
-        ):
+        if not prompter.confirm(f"File {path} already exists. Overwrite?", default=False):
             raise InitAborted()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(rendered, encoding="utf-8")

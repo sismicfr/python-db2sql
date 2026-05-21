@@ -68,10 +68,7 @@ class RotatingFileSink(AbstractContextManager["RotatingFileSink"]):
         if not self._buffer:
             return
         buffered_size = sum(len(s.encode("utf-8")) for s in self._buffer)
-        if (
-            self._current_size > 0
-            and self._current_size + buffered_size > self._max_bytes
-        ):
+        if self._current_size > 0 and self._current_size + buffered_size > self._max_bytes:
             self._rotate()
         self._flush_buffer()
 

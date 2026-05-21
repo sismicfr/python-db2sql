@@ -12,7 +12,11 @@ from yaml import safe_load as load_yaml
 
 from db2sql import const
 
-from .errors import ConfigInvalidError, ConfigMissingError, ConfigUnsupportedFileExtensionError
+from .errors import (
+    ConfigInvalidError,
+    ConfigMissingError,
+    ConfigUnsupportedFileExtensionError,
+)
 from .schema import AppConfig
 
 PathLike = Union[str, Path]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator, List, Protocol, Tuple
+from typing import Any, Iterator, List, Protocol, Tuple
 
 from db2sql.domain.model import Column, Database, Table
 

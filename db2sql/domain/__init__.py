@@ -8,7 +8,7 @@ from .errors import (
     DuplicatedTableError,
 )
 from .model import Column, Database, ForeignKey, Schema, Table
-from .policy import FilterRules, filter_database, normalize_identifier, to_snake_case
+from .policy import filter_database, FilterRules, normalize_identifier, to_snake_case
 
 __all__ = [
     "Column",

@@ -104,9 +104,7 @@ class PostgresTargetWriter:
         try:
             raw.copy_expert(copy_sql, buffer)
         except Exception as exc:
-            raise TargetWriterExecutionError(
-                f"COPY into {qualified} failed: {exc}"
-            ) from exc
+            raise TargetWriterExecutionError(f"COPY into {qualified} failed: {exc}") from exc
         self._logger.info(f"loaded {count} row(s) into {schema}.{table.name}")
 
     # ---- helpers ----------------------------------------------------------
