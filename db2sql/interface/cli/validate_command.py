@@ -17,21 +17,20 @@ emitting SQL.
 from __future__ import annotations
 
 import argparse
-from typing import Dict, List, Tuple
+from typing import List
 
 from db2sql.application.dto import DumpRequest
 from db2sql.application.ports import SourceReader
-from db2sql.domain.model import Database
+from db2sql.domain.model import Database, Table
 from db2sql.domain.policy import filter_database
 from db2sql.infrastructure.config import AppConfig, to_dump_request
 from db2sql.infrastructure.logging import ConsoleLogger, Palette
 from db2sql.infrastructure.persistence.errors import SourceReaderError
 from db2sql.infrastructure.plugins import (
-    UnknownEmitterError,
-    UnknownReaderError,
     available_emitters,
     available_readers,
     get_source_reader,
+    UnknownReaderError,
 )
 
 from .exit_codes import ERROR_GENERAL, ERROR_INVALID_CONFIGURATION, SUCCESS
@@ -75,8 +74,7 @@ def _check_plugin_names(config: AppConfig, logger: ConsoleLogger) -> int | None:
     emitters = available_emitters()
     if config.driver not in readers:
         logger.error(
-            f"unknown driver {config.driver!r}; known: "
-            f"{', '.join(sorted(readers)) or '(none)'}"
+            f"unknown driver {config.driver!r}; known: " f"{', '.join(sorted(readers)) or '(none)'}"
         )
         return ERROR_INVALID_CONFIGURATION
     if config.target not in emitters:
@@ -93,9 +91,7 @@ def _check_plugin_names(config: AppConfig, logger: ConsoleLogger) -> int | None:
 # --------------------------------------------------------------------------- #
 
 
-def _run_dry_run(
-    config: AppConfig, logger: ConsoleLogger, *, with_counts: bool
-) -> int:
+def _run_dry_run(config: AppConfig, logger: ConsoleLogger, *, with_counts: bool) -> int:
     request = to_dump_request(config)
     _print_header(logger, "Source connection")
     _print_connection(logger, config)
@@ -139,9 +135,7 @@ def _print_connection(logger: ConsoleLogger, config: AppConfig) -> None:
         _print_kv(logger, "options", pretty)
 
 
-def _print_filter_summary(
-    logger: ConsoleLogger, raw: Database, filtered: Database
-) -> None:
+def _print_filter_summary(logger: ConsoleLogger, raw: Database, filtered: Database) -> None:
     _print_header(logger, "Filtering")
     total_schemas = len(raw.schemas)
     total_tables = sum(len(s.tables) for s in raw.schemas.values())
@@ -192,13 +186,11 @@ def _print_plan(
             count_str = ""
             if with_counts:
                 count_str = f", count={_count_rows(reader, schema_name, schema.tables[table_name], limit, logger)}"
-            logger.info(
-                f"  - {table_name} (format={fmt}, {limit_str}{count_str})"
-            )
+            logger.info(f"  - {table_name} (format={fmt}, {limit_str}{count_str})")
 
 
 def _count_rows(
-    reader: SourceReader, schema: str, table: object, limit: int, logger: ConsoleLogger
+    reader: SourceReader, schema: str, table: Table, limit: int, logger: ConsoleLogger
 ) -> str:
     """Return a row count for the table.
 

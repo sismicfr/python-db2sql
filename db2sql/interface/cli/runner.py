@@ -16,16 +16,16 @@ from db2sql.infrastructure.config import (
     to_dump_request,
     to_migrate_request,
 )
-from db2sql.infrastructure.logging import ConsoleLogger, Palette, init_colorama
+from db2sql.infrastructure.logging import ConsoleLogger, init_colorama, Palette
 from db2sql.infrastructure.output import ExecutingSink, RotatingFileSink, StreamSink
 from db2sql.infrastructure.persistence.errors import SourceReaderError
 from db2sql.infrastructure.plugins import (
+    get_source_reader,
+    get_sql_emitter,
+    get_target_writer,
     UnknownEmitterError,
     UnknownReaderError,
     UnknownWriterError,
-    get_sql_emitter,
-    get_source_reader,
-    get_target_writer,
 )
 from db2sql.infrastructure.writer import TargetWriterError
 
@@ -38,12 +38,12 @@ from .exit_codes import (
 )
 from .init_command import run_init
 from .parser import (
+    AbortExecution,
+    build_parser,
     COMMAND_INIT,
     COMMAND_MIGRATE,
     COMMAND_VALIDATE,
-    AbortExecution,
     CommandLineError,
-    build_parser,
 )
 from .validate_command import run_validate
 
@@ -107,9 +107,7 @@ class Cli:
         )
         request = to_dump_request(config)
         if request.split_size is not None and not request.output_file:
-            raise CommandLineError(
-                "--split-size requires -f/--file (cannot rotate stdout)."
-            )
+            raise CommandLineError("--split-size requires -f/--file (cannot rotate stdout).")
         with self._open_dump_sink(request) as sink:
             use_case = DumpDatabaseUseCase(
                 reader=reader,

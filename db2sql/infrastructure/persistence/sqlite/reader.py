@@ -124,9 +124,7 @@ class SQLiteSourceReader:
                 continue
             column.foreign_key = ForeignKey(self._schema, ref_table, ref_col)
 
-    def iter_rows(
-        self, schema: str, table: Table, limit: int = -1
-    ) -> Iterator[Tuple[Any, ...]]:
+    def iter_rows(self, schema: str, table: Table, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
         session = self._ensure_session()
         columns = ", ".join(f'"{name}"' for name in table.columns)
         suffix = f" LIMIT {limit}" if limit and limit > 0 else ""
@@ -139,9 +137,5 @@ class SQLiteSourceReader:
     def describe_query(self, query: str) -> List[Column]:
         return query_introspection.describe_query(self._ensure_session(), query)
 
-    def iter_query_rows(
-        self, query: str, limit: int = -1
-    ) -> Iterator[Tuple[Any, ...]]:
-        yield from query_introspection.iter_query_rows(
-            self._ensure_session(), query, limit=limit
-        )
+    def iter_query_rows(self, query: str, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
+        yield from query_introspection.iter_query_rows(self._ensure_session(), query, limit=limit)

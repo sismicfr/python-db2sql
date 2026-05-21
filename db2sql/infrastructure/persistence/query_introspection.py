@@ -63,9 +63,7 @@ def describe_query(session: Session, query: str) -> List[Column]:
     return columns
 
 
-def iter_query_rows(
-    session: Session, query: str, limit: int = -1
-) -> Iterator[Tuple[Any, ...]]:
+def iter_query_rows(session: Session, query: str, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
     """Execute ``query`` and yield rows, stopping after ``limit`` if positive."""
     result: Result[Any] = session.execute(text(query))
     try:

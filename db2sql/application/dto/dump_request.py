@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, FrozenSet, Mapping, Optional, Tuple
+from typing import Mapping, Optional, Tuple
 
 from db2sql.domain.policy import FilterRules
 

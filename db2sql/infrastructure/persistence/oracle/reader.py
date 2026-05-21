@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
@@ -12,6 +12,7 @@ from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+
 
 def _normalize_oracle_type(raw: str) -> str:
     """Normalize Oracle data-type strings so the postgres emitter can map them.
@@ -147,12 +148,9 @@ class OracleSourceReader:
 
     def _read_schemas(self, database: Database) -> None:
         owner = self._schema_filter
-        params: dict = {}
+        params: Dict[str, Any] = {}
         if owner:
-            query = (
-                "SELECT DISTINCT OWNER FROM ALL_TABLES "
-                "WHERE OWNER = :owner ORDER BY OWNER"
-            )
+            query = "SELECT DISTINCT OWNER FROM ALL_TABLES " "WHERE OWNER = :owner ORDER BY OWNER"
             params["owner"] = owner
         else:
             query = (
@@ -165,11 +163,11 @@ class OracleSourceReader:
         except Exception as exc:
             raise SourceReaderError(f"Error connecting to database {exc}") from exc
         for row in rows:
-            database.add_schema(Schema(row.OWNER))
+            database.add_schema(Schema(row.owner))
 
     def _read_tables(self, database: Database) -> None:
         owner = self._schema_filter
-        params: dict = {}
+        params: Dict[str, Any] = {}
         clauses = ["t.IOT_NAME IS NULL"]
         if owner:
             clauses.append("t.OWNER = :owner")
@@ -187,11 +185,11 @@ class OracleSourceReader:
             params,
         )
         for row in rows:
-            database.add_table(row.OWNER, Table(row.TABLE_NAME))
+            database.add_table(row.owner, Table(row.table_name))
 
     def _read_columns(self, database: Database) -> None:
         owner = self._schema_filter
-        params: dict = {}
+        params: Dict[str, Any] = {}
         if owner:
             owner_clause = "c.OWNER = :owner"
             params["owner"] = owner
@@ -209,31 +207,31 @@ class OracleSourceReader:
             params,
         )
         for row in rows:
-            table = database.get_table(row.OWNER, row.TABLE_NAME)
+            table = database.get_table(row.owner, row.table_name)
             if table is None:
                 continue
-            default = row.DATA_DEFAULT
+            default = row.data_default
             if isinstance(default, str):
                 default = default.strip().rstrip(";").strip() or None
-            data_type = (row.DATA_TYPE or "").lower()
-            char_length = row.CHAR_LENGTH if "char" in data_type else -1
+            data_type = (row.data_type or "").lower()
+            char_length = row.char_length if "char" in data_type else -1
             if not char_length:
                 char_length = -1
             table.add_column(
                 Column(
-                    name=row.COLUMN_NAME,
-                    type=_normalize_oracle_type(row.DATA_TYPE),
+                    name=row.column_name,
+                    type=_normalize_oracle_type(row.data_type),
                     default=default,
-                    nullable=row.NULLABLE == "Y",
+                    nullable=row.nullable == "Y",
                     char_length=char_length,
-                    precision=row.DATA_PRECISION,
-                    scale=row.DATA_SCALE,
+                    precision=row.data_precision,
+                    scale=row.data_scale,
                 )
             )
 
     def _read_constraints(self, database: Database) -> None:
         owner = self._schema_filter
-        params: dict = {}
+        params: Dict[str, Any] = {}
         if owner:
             owner_clause = "c.OWNER = :owner"
             params["owner"] = owner
@@ -256,16 +254,16 @@ class OracleSourceReader:
             params,
         )
         for row in rows:
-            table = database.get_table(row.OWNER, row.TABLE_NAME)
+            table = database.get_table(row.owner, row.table_name)
             if table is None:
                 continue
-            column = table.get_column(row.COLUMN_NAME)
+            column = table.get_column(row.column_name)
             if column is not None:
-                column.constraint = row.CONSTRAINT_TYPE
+                column.constraint = row.constraint_type
 
     def _read_foreign_keys(self, database: Database) -> None:
         owner = self._schema_filter
-        params: dict = {}
+        params: Dict[str, Any] = {}
         if owner:
             owner_clause = "c.OWNER = :owner"
             params["owner"] = owner
@@ -291,17 +289,17 @@ class OracleSourceReader:
             params,
         )
         for row in rows:
-            table = database.get_table(row.OWNER, row.TABLE_NAME)
+            table = database.get_table(row.owner, row.table_name)
             if table is None:
                 continue
-            column = table.get_column(row.COLUMN_NAME)
+            column = table.get_column(row.column_name)
             if column is None:
                 continue
-            column.foreign_key = ForeignKey(row.REF_OWNER, row.REF_TABLE, row.REF_COLUMN)
+            column.foreign_key = ForeignKey(row.ref_owner, row.ref_table, row.ref_column)
 
     def _read_indexes(self, database: Database) -> None:
         owner = self._schema_filter
-        params: dict = {}
+        params: Dict[str, Any] = {}
         if owner:
             owner_clause = "i.TABLE_OWNER = :owner"
             params["owner"] = owner
@@ -322,14 +320,14 @@ class OracleSourceReader:
             params,
         )
         for row in rows:
-            table = database.get_table(row.TABLE_OWNER, row.TABLE_NAME)
+            table = database.get_table(row.table_owner, row.table_name)
             if table is not None:
-                table.add_index(row.INDEX_NAME, row.COLUMN_NAME)
+                table.add_index(row.index_name, row.column_name)
 
     def _read_identity_columns(self, database: Database) -> None:
         """Detect 12c+ identity columns. Silently skipped on older Oracle versions."""
         owner = self._schema_filter
-        params: dict = {}
+        params: Dict[str, Any] = {}
         if owner:
             owner_clause = "OWNER = :owner"
             params["owner"] = owner
@@ -347,16 +345,14 @@ class OracleSourceReader:
         except Exception:
             return
         for row in rows:
-            table = database.get_table(row.OWNER, row.TABLE_NAME)
+            table = database.get_table(row.owner, row.table_name)
             if table is None:
                 continue
-            column = table.get_column(row.COLUMN_NAME)
+            column = table.get_column(row.column_name)
             if column is not None:
                 column.identity = True
 
-    def iter_rows(
-        self, schema: str, table: Table, limit: int = -1
-    ) -> Iterator[Tuple[Any, ...]]:
+    def iter_rows(self, schema: str, table: Table, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
         session = self._ensure_session()
         columns = ", ".join(f'"{name}"' for name in table.columns)
         query = f'SELECT {columns} FROM "{schema}"."{table.name}"'
@@ -369,9 +365,5 @@ class OracleSourceReader:
     def describe_query(self, query: str) -> List[Column]:
         return query_introspection.describe_query(self._ensure_session(), query)
 
-    def iter_query_rows(
-        self, query: str, limit: int = -1
-    ) -> Iterator[Tuple[Any, ...]]:
-        yield from query_introspection.iter_query_rows(
-            self._ensure_session(), query, limit=limit
-        )
+    def iter_query_rows(self, query: str, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
+        yield from query_introspection.iter_query_rows(self._ensure_session(), query, limit=limit)

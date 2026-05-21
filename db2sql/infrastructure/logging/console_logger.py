@@ -6,7 +6,7 @@ import sys
 import traceback
 from typing import IO, Optional
 
-from .colors import RESET, Palette, color_enabled
+from .colors import color_enabled, Palette, RESET
 
 LEVEL_QUIET = 80
 LEVEL_ERROR = 70
@@ -66,7 +66,9 @@ class ConsoleLogger:
             raise InvalidLogLevel(level_name) from exc
         stream: IO[str]
         if log_file:
-            stream = open(log_file, "wt", encoding="utf-8")  # noqa: SIM115 — owned for process lifetime
+            stream = open(
+                log_file, "wt", encoding="utf-8"
+            )  # noqa: SIM115 — owned for process lifetime
         else:
             stream = sys.stdout
         return cls(level=level, stream=stream)

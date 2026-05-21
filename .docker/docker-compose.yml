@@ -1,3 +1,5 @@
+name: python-db2sql
+
 services:
   dev:
     build:
@@ -12,6 +14,7 @@ services:
       - ..:/workspace
     environment:
       DEVCONTAINER: "true"
+      PIPUSER: "0"
       HOME: /home/dev
       MSSQL_HOST: mssql
       MSSQL_PORT: "1433"
@@ -28,7 +31,16 @@ services:
       PG_USER: postgres
       PG_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       PG_DATABASE: db2sqltarget
+      PG_SOURCE_SCHEMA: apptest
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysqlpw}
+      MYSQL_DATABASE: db2sqltest
     init: true
+    tty: true
+    stdin_open: true
+    command: ["sleep", "infinity"]
 
   mssql:
     profiles: ["functional"]
@@ -38,7 +50,7 @@ services:
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Db2sqlTest!Strong}
       MSSQL_PID: Developer
     ports:
-      - "${MSSQL_PORT:-1433}:1433"
+      - "${MSSQL_PORT:-11433}:1433"
     volumes:
       - mssql-data:/var/opt/mssql
     healthcheck:
@@ -82,7 +94,7 @@ services:
       APP_USER: ${ORACLE_APP_USER:-apptest}
       APP_USER_PASSWORD: ${ORACLE_APP_PASSWORD:-apptestpw}
     ports:
-      - "${ORACLE_PORT:-1521}:1521"
+      - "${ORACLE_PORT:-11521}:1521"
     volumes:
       - ./oracle/init:/container-entrypoint-initdb.d:ro
       - oracle-data:/opt/oracle/oradata
@@ -93,6 +105,26 @@ services:
       retries: 60
       start_period: 60s
 
+  mysql:
+    profiles: ["functional"]
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysqlpw}
+      MYSQL_DATABASE: db2sqltest
+    ports:
+      - "${MYSQL_PORT:-13306}:3306"
+    volumes:
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
   postgres:
     profiles: ["functional"]
     image: postgres:16-alpine
@@ -101,7 +133,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: db2sqltarget
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${PG_PORT:-15432}:5432"
     volumes:
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
       - postgres-data:/var/lib/postgresql/data
@@ -113,5 +145,6 @@ services:
 
 volumes:
   mssql-data:
+  mysql-data:
   oracle-data:
   postgres-data:

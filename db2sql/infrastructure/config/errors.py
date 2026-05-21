@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Union
 from pathlib import Path
+from typing import Union
 
 
 class ConfigError(Exception):

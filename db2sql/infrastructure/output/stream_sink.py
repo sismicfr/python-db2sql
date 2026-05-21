@@ -18,7 +18,9 @@ class StreamSink(AbstractContextManager["StreamSink"]):
 
     def __enter__(self) -> "StreamSink":
         if self._path:
-            self._stream = open(self._path, "w", encoding="utf-8")  # noqa: SIM115 — closed in __exit__
+            self._stream = open(
+                self._path, "w", encoding="utf-8"
+            )  # noqa: SIM115 — closed in __exit__
             self._owns_stream = True
         else:
             self._stream = sys.stdout

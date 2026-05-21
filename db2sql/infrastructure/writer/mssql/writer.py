@@ -106,9 +106,7 @@ class MssqlTargetWriter:
                 raw_cursor.executemany(insert_sql, batch)
                 total += len(batch)
         except Exception as exc:
-            raise TargetWriterExecutionError(
-                f"INSERT into {qualified} failed: {exc}"
-            ) from exc
+            raise TargetWriterExecutionError(f"INSERT into {qualified} failed: {exc}") from exc
         self._logger.info(f"loaded {total} row(s) into {schema}.{table.name}")
 
     # ---- helpers ----------------------------------------------------------

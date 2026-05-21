@@ -229,7 +229,7 @@ You need to install ``tox`` using one of the following approach:
 Running integration tests
 -------------------------
 
-Integration tests run against a local symbol store. 
+Integration tests run against a local symbol store.
 
 To run these tests:
 
@@ -237,6 +237,51 @@ To run these tests:
 
    # run the CLI tests:
    tox -e cli
+
+
+Running functional tests
+------------------------
+
+Functional tests exercise the source readers (and emitters) against real
+database servers. A docker compose stack under ``.docker/`` brings up the
+required services (MSSQL, MySQL, PostgreSQL, and optionally Oracle) and
+applies the per-DB init scripts in ``.docker/<db>/init/``.
+
+The ``functional`` docker compose profile covers MSSQL, MySQL and Postgres
+(lightweight images). Oracle lives in its own ``oracle`` profile because the
+image is ~10 GB and takes 3–5 min to boot.
+
+Make targets:
+
+.. code-block:: bash
+
+   # full stack (mssql + mysql + postgres + oracle), then run all functional
+   # tests inside the dev container
+   make stack-up
+   make test-functional
+
+   # lightweight subset — no Oracle (fast iteration)
+   make stack-up-light
+   make test-functional-light
+
+   # Oracle-only (heavy, on-demand)
+   make stack-up-oracle
+   make test-oracle
+
+   # tear down (keep volumes / wipe volumes)
+   make stack-down
+   make stack-reset
+
+The connection parameters consumed by the test fixtures are injected into
+the dev container by ``.docker/docker-compose.yml`` (``MSSQL_*``, ``MYSQL_*``,
+``PG_*``, ``ORACLE_*``). When a server is unreachable or its env vars are
+missing, the corresponding fixture skips the test with a clear message
+instead of failing — so the suite stays green when run outside the stack.
+
+Adding a new functional fixture: drop an init script under
+``.docker/<db>/init/`` (executed automatically by the official images) and
+mirror the existing tests in ``tests/functional/`` (one test module per
+source DB, ``pytestmark = pytest.mark.functional``).
 
 
 Releases

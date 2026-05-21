@@ -9,7 +9,12 @@ from typing import Any, Optional, Sequence
 
 from db2sql import const
 from db2sql.application.dto import DataFormat
-from db2sql.infrastructure.config import AppConfig, ConfigError, load_config, merge_cli_overrides
+from db2sql.infrastructure.config import (
+    AppConfig,
+    ConfigError,
+    load_config,
+    merge_cli_overrides,
+)
 from db2sql.infrastructure.plugins import (
     available_emitters,
     available_readers,
@@ -44,9 +49,7 @@ class CommandLineError(Exception):
 class MsDumpToPGArgumentParser(argparse.ArgumentParser):
     """Builds an :class:`AppConfig` from CLI args + config file + env."""
 
-    def parse_args_with_config(
-        self, args: Optional[Sequence[str]] = None
-    ) -> argparse.Namespace:
+    def parse_args_with_config(self, args: Optional[Sequence[str]] = None) -> argparse.Namespace:
         options = super().parse_args(args)
 
         if "help" in options and options.help:
@@ -61,9 +64,8 @@ class MsDumpToPGArgumentParser(argparse.ArgumentParser):
         # The validate subcommand accepts the config file as a positional arg;
         # let it win over -C / env / default lookup if provided.
         config_file = options.config_file
-        if (
-            getattr(options, "command", None) == COMMAND_VALIDATE
-            and getattr(options, "validate_config_file", None)
+        if getattr(options, "command", None) == COMMAND_VALIDATE and getattr(
+            options, "validate_config_file", None
         ):
             config_file = options.validate_config_file
 
@@ -144,53 +146,78 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         action=OnceArgument,
     )
     parser.add_argument(
-        "-H", "--host",
-        metavar="HOSTNAME", dest="hostname", type=str,
+        "-H",
+        "--host",
+        metavar="HOSTNAME",
+        dest="hostname",
+        type=str,
         help=f"Database server host name. [env var: {const.ENV_DB2SQL_HOST}]",
         default=os.getenv(const.ENV_DB2SQL_HOST),
         action=OnceArgument,
     )
     parser.add_argument(
-        "-P", "--port",
-        metavar="PORT", dest="port", type=int,
+        "-P",
+        "--port",
+        metavar="PORT",
+        dest="port",
+        type=int,
         help=f"Database server port. [env var: {const.ENV_DB2SQL_PORT}]",
         default=os.getenv(const.ENV_DB2SQL_PORT),
         action=OnceArgument,
     )
     parser.add_argument(
-        "-d", "--dbname",
-        metavar="DBNAME", dest="dbname", type=str,
+        "-d",
+        "--dbname",
+        metavar="DBNAME",
+        dest="dbname",
+        type=str,
         help=f"Database name to connect to. [env var: {const.ENV_DB2SQL_DBNAME}]",
         default=os.getenv(const.ENV_DB2SQL_DBNAME),
         action=OnceArgument,
     )
     parser.add_argument(
-        "-u", "--username",
-        metavar="USERNAME", dest="username", type=str,
+        "-u",
+        "--username",
+        metavar="USERNAME",
+        dest="username",
+        type=str,
         help=f"Database user name. [env var: {const.ENV_DB2SQL_USER}]",
         default=os.getenv(const.ENV_DB2SQL_USER),
         action=OnceArgument,
     )
     parser.add_argument(
-        "-p", "--password",
-        metavar="PASSWORD", dest="password", type=str,
+        "-p",
+        "--password",
+        metavar="PASSWORD",
+        dest="password",
+        type=str,
         help=f"Database password. [env var: {const.ENV_DB2SQL_PASSWORD}]",
         default=os.getenv(const.ENV_DB2SQL_PASSWORD),
         action=OnceArgument,
     )
     parser.add_argument(
-        "-W", "--ask-password",
-        dest="ask_password", action="store_true", default=False,
+        "-W",
+        "--ask-password",
+        dest="ask_password",
+        action="store_true",
+        default=False,
         help="Force password prompt.",
     )
     parser.add_argument(
-        "-f", "--file",
-        metavar="PATH", dest="output_file_name", type=str, default=None,
+        "-f",
+        "--file",
+        metavar="PATH",
+        dest="output_file_name",
+        type=str,
+        default=None,
         help="Output file. If not provided, script is printed to standard output.",
     )
     parser.add_argument(
         "--split-size",
-        metavar="SIZE", dest="split_size", type=_parse_size, default=None,
+        metavar="SIZE",
+        dest="split_size",
+        type=_parse_size,
+        default=None,
         help=(
             "Split the dump into multiple files when the current file exceeds "
             "SIZE. Accepts a byte count or a suffixed value (K/M/G). Requires -f."
@@ -210,12 +237,16 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--preserve-case",
-        dest="preserve_case", action=BooleanAction, default=None,
+        dest="preserve_case",
+        action=BooleanAction,
+        default=None,
         help="Preserve identifier case. When disabled, names are converted to snake_case.",
     )
     parser.add_argument(
         "--transaction",
-        dest="dump_use_transaction", action=BooleanAction, default=None,
+        dest="dump_use_transaction",
+        action=BooleanAction,
+        default=None,
         help=(
             "Wrap the dump in a transaction (BEGIN/COMMIT). Disable with "
             "--no-transaction when the SQL is consumed by a tool that manages "
@@ -223,55 +254,89 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
-        "-n", "--max-records",
-        dest="limit_records", type=int, default=None,
+        "-n",
+        "--max-records",
+        dest="limit_records",
+        type=int,
+        default=None,
         help="Limit the number of rows from each table. -1 means no limit.",
     )
     parser.add_argument(
         "--data-format",
         dest="data_format",
-        choices=[fmt.value for fmt in DataFormat], default=None,
+        choices=[fmt.value for fmt in DataFormat],
+        default=None,
         help="Default output format for table data: copy (faster) or insert.",
     )
     parser.add_argument(
-        "-i", "--include-schemas",
-        metavar="NAME", dest="include_schemas", type=str,
-        action="append", nargs="+", default=None,
+        "-i",
+        "--include-schemas",
+        metavar="NAME",
+        dest="include_schemas",
+        type=str,
+        action="append",
+        nargs="+",
+        default=None,
         help="Schema names to include during export (repeatable, comma separated).",
     )
     parser.add_argument(
-        "-x", "--exclude-schemas",
-        metavar="NAME", dest="exclude_schemas", type=str,
-        action="append", nargs="+", default=None,
+        "-x",
+        "--exclude-schemas",
+        metavar="NAME",
+        dest="exclude_schemas",
+        type=str,
+        action="append",
+        nargs="+",
+        default=None,
         help="Schema names to exclude during export (repeatable, comma separated).",
     )
     parser.add_argument(
-        "-I", "--include-tables",
-        metavar="NAME", dest="include_tables", type=str,
-        action="append", nargs="+", default=None,
+        "-I",
+        "--include-tables",
+        metavar="NAME",
+        dest="include_tables",
+        type=str,
+        action="append",
+        nargs="+",
+        default=None,
         help="Table names to include during export (repeatable, comma separated).",
     )
     parser.add_argument(
-        "-X", "--exclude-tables",
-        metavar="NAME", dest="exclude_tables", type=str,
-        action="append", nargs="+", default=None,
+        "-X",
+        "--exclude-tables",
+        metavar="NAME",
+        dest="exclude_tables",
+        type=str,
+        action="append",
+        nargs="+",
+        default=None,
         help="Table names to exclude during export (repeatable, comma separated).",
     )
     parser.add_argument(
-        "-C", "--config-file",
-        metavar="PATH", dest="config_file", type=str,
+        "-C",
+        "--config-file",
+        metavar="PATH",
+        dest="config_file",
+        type=str,
         help=f"Configuration file to use. [env var: {const.ENV_DB2SQL_CONFIG}]",
     )
     parser.add_argument(
-        "-L", "--log-file",
-        metavar="PATH", dest="log_file", type=str,
+        "-L",
+        "--log-file",
+        metavar="PATH",
+        dest="log_file",
+        type=str,
         help="Send log output to PATH instead of stdout.",
         action=OnceArgument,
     )
     parser.add_argument(
-        "-V", "--verbosity",
-        metavar="LEVEL", dest="verbosity", default="status",
-        nargs="?", type=str,
+        "-V",
+        "--verbosity",
+        metavar="LEVEL",
+        dest="verbosity",
+        default="status",
+        nargs="?",
+        type=str,
         help=(
             "Level of detail of the output. Valid options from less verbose to "
             "more verbose: -Vquiet, -Verror, -Vwarning, -Vnotice, -Vstatus, "
@@ -279,7 +344,10 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
-        "--version", dest="version", action="store_true", default=False,
+        "--version",
+        dest="version",
+        action="store_true",
+        default=False,
         help="Output version information and exit.",
     )
 
@@ -437,7 +505,9 @@ def _add_migrate_subparser(subparsers: Any) -> None:
     )
     migrate_parser.add_argument(
         "--transaction",
-        dest="use_transaction", action=BooleanAction, default=None,
+        dest="use_transaction",
+        action=BooleanAction,
+        default=None,
         help=(
             "Wrap the emitted SQL in a transaction (BEGIN/COMMIT). Disable "
             "with --no-transaction to let the target driver auto-commit each "
@@ -458,13 +528,19 @@ def _add_init_subparser(subparsers: Any) -> None:
         formatter_class=SmartFormatter,
     )
     init_parser.add_argument(
-        "-o", "--output",
-        dest="init_output", metavar="PATH", type=str, default=None,
+        "-o",
+        "--output",
+        dest="init_output",
+        metavar="PATH",
+        type=str,
+        default=None,
         help="Write the generated config to PATH (default: stdout).",
     )
     init_parser.add_argument(
         "--force",
-        dest="init_force", action="store_true", default=False,
+        dest="init_force",
+        action="store_true",
+        default=False,
         help="Overwrite the output file without asking for confirmation.",
     )
 

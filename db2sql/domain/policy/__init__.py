@@ -1,7 +1,7 @@
 """Pure domain policies (identifier normalization, filtering rules)."""
 
 from .dependency_order import drop_order, topological_order
-from .filter import FilterRules, filter_database
+from .filter import filter_database, FilterRules
 from .identifier import normalize_identifier, to_snake_case
 
 __all__ = [

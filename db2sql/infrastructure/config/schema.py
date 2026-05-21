@@ -88,9 +88,7 @@ class DumpConfig(BaseModel):
         if value is None:
             return "fail"
         if value not in ("fail", "drop", "truncate"):
-            raise ValueError(
-                "dump.on_existing must be one of 'fail', 'drop', 'truncate'"
-            )
+            raise ValueError("dump.on_existing must be one of 'fail', 'drop', 'truncate'")
         return value
 
     @field_validator(
@@ -132,9 +130,7 @@ class MigrateConfig(BaseModel):
         if value is None:
             return "fail"
         if value not in ("fail", "drop", "truncate"):
-            raise ValueError(
-                "migrate.on_existing must be one of 'fail', 'drop', 'truncate'"
-            )
+            raise ValueError("migrate.on_existing must be one of 'fail', 'drop', 'truncate'")
         return value
 
 

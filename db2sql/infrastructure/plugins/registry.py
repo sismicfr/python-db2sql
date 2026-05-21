@@ -13,7 +13,7 @@ distribution metadata.
 from __future__ import annotations
 
 from importlib import metadata
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, cast, Dict, List
 
 from db2sql.application.ports import Logger, SourceReader, SqlEmitter, TargetWriter
 from db2sql.infrastructure.config import AppConfig
@@ -97,7 +97,7 @@ def get_source_reader(name: str, config: AppConfig, logger: Logger) -> SourceRea
         return _manual_readers[name](config, logger)
     eps = _load_entry_points(READERS_GROUP)
     if name in eps:
-        return eps[name](config, logger)
+        return cast(SourceReader, eps[name](config, logger))
     raise UnknownReaderError(name, available_readers())
 
 
@@ -106,7 +106,7 @@ def get_sql_emitter(name: str, **kwargs: Any) -> SqlEmitter:
         return _manual_emitters[name](**kwargs)
     eps = _load_entry_points(EMITTERS_GROUP)
     if name in eps:
-        return eps[name](**kwargs)
+        return cast(SqlEmitter, eps[name](**kwargs))
     raise UnknownEmitterError(name, available_emitters())
 
 
@@ -115,5 +115,5 @@ def get_target_writer(name: str, config: AppConfig, logger: Logger) -> TargetWri
         return _manual_writers[name](config, logger)
     eps = _load_entry_points(WRITERS_GROUP)
     if name in eps:
-        return eps[name](config, logger)
+        return cast(TargetWriter, eps[name](config, logger))
     raise UnknownWriterError(name, available_writers())

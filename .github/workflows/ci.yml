@@ -75,7 +75,7 @@ jobs:
         run: sphinx-build -b html -W --keep-going docs docs/_build/html
 
   functional:
-    name: Functional tests (MSSQL + Postgres, no Oracle)
+    name: Functional tests (MSSQL + MySQL + Postgres, no Oracle)
     runs-on: ubuntu-latest
     # Light stack (~2-3 min boot). Runs on every push to main, and on PRs
     # carrying the `run-functional` label. Oracle is on-demand only — see
@@ -98,6 +98,12 @@ jobs:
       POSTGRES_PASSWORD: postgres
       PG_PASSWORD: postgres
       PG_DATABASE: db2sqltarget
+      MYSQL_HOST: localhost
+      MYSQL_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_ROOT_PASSWORD: mysqlpw
+      MYSQL_PASSWORD: mysqlpw
+      MYSQL_DATABASE: db2sqltest
     steps:
       - uses: actions/checkout@v4
 
@@ -112,8 +118,11 @@ jobs:
       - name: Install package and test dependencies
         run: pip install -e ".[all]" pytest
 
-      - name: Start docker stack (mssql + postgres) and wait until healthy
-        run: docker compose -f .docker/docker-compose.yml --profile functional up -d --wait
+      - name: Start docker stack (mssql + mysql + postgres) and wait until healthy
+        run: docker compose -f .docker/docker-compose.yml --profile functional up -d --wait mssql mysql postgres
+
+      - name: Apply MSSQL init schema
+        run: docker compose -f .docker/docker-compose.yml --profile functional run --rm mssql-init
 
       - name: Run functional tests (excluding Oracle)
         run: pytest -m "functional and not oracle" tests/functional -v
