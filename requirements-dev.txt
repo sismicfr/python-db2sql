@@ -1,4 +1,4 @@
 tox
-build==1.2.1
+build==1.4.4
 pytest
 pytest-cov

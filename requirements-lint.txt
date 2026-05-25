@@ -1,9 +1,9 @@
 -r requirements.txt
-build==1.2.1
+build==1.4.4
 black==24.10.0
 commitizen==3.31.0
-flake8==7.1.1
-import-linter==2.1
+flake8==7.3.0
+import-linter==2.5.2
 isort==5.13.2
 mypy==1.13.0
 pylint==3.3.1
