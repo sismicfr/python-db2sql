@@ -10,6 +10,7 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      # When a tag is pushed, the default value will be true in order to attach artifacts to the release
       attach-to-release:
         description: "Attach built artifacts to the GitHub release matching the current ref (if any)"
         type: boolean
