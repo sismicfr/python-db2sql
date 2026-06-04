@@ -193,7 +193,19 @@ Output
    column names) are kept exactly as they appear in the source database.
 
    When disabled (the default), identifiers are converted to ``snake_case``
-   so they work without quoting in PostgreSQL.
+   so they work without quoting in PostgreSQL.  The conversion keeps
+   acronym runs glued together and collapses all-caps identifiers to a
+   single word:
+
+   ===================== =====================
+   Source identifier     Converted
+   ===================== =====================
+   ``CamelCase``         ``camel_case``
+   ``HTTPServer``        ``http_server``
+   ``UserID``            ``user_id``
+   ``MYTABLE``           ``mytable``
+   ``customer_ID``       ``customer_id``
+   ===================== =====================
 
 .. option:: --transaction / --no-transaction
 

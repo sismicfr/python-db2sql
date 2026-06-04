@@ -269,7 +269,11 @@ dump
    * - ``preserve_case``
      - ``false``
      - Preserve identifier case as-is.  When ``false``, identifiers are
-       converted to ``snake_case``.
+       converted to ``snake_case`` — acronym runs stay glued
+       (``HTTPServer`` → ``http_server``, ``UserID`` → ``user_id``) and
+       all-caps names collapse to a single word
+       (``MYTABLE`` → ``mytable``).  See :option:`--preserve-case` for
+       the full table of examples.
    * - ``limit_records``
      - ``-1``
      - Maximum rows per table.  ``-1`` means no limit.
@@ -642,7 +646,8 @@ Oracle connections are configured almost entirely through
      preserve_case: false
      default_data_format: copy
      mapping_schemas:
-       HR: hr           # rewrite Oracle's upper-case owner to snake_case
+       HR: human_resources  # optional rename; snake_case normalization
+                            # alone would already produce "hr"
 
 Oracle → MSSQL
 ~~~~~~~~~~~~~~
