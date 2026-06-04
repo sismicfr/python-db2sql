@@ -95,6 +95,55 @@ class TestColumnDefinition:
         col = Column(name="email", type="text", nullable=False, default="''")
         assert emitter.column_definition(col) == '"email" text NOT NULL DEFAULT \'\''
 
+    @pytest.mark.parametrize(
+        "source_type, raw_default, expected",
+        [
+            # MSSQL date/time functions translate to PG equivalents.
+            ("datetime", "(getdate())", "now()"),
+            ("datetime2", "(GETDATE())", "now()"),
+            ("datetime2", "(sysdatetime())", "LOCALTIMESTAMP"),
+            ("datetime2", "(getutcdate())", "(now() AT TIME ZONE 'utc')"),
+            ("datetime2", "(sysutcdatetime())", "(now() AT TIME ZONE 'utc')"),
+            # uuid generators.
+            ("uniqueidentifier", "(newid())", "gen_random_uuid()"),
+            ("uniqueidentifier", "(newsequentialid())", "gen_random_uuid()"),
+            # session info.
+            ("varchar", "(suser_sname())", "CURRENT_USER"),
+            ("varchar", "(db_name())", "current_database()"),
+            # ``N'foo'`` unicode literal → plain literal.
+            ("varchar", "(N'foo')", "'foo'"),
+            # ``bit`` → boolean coercion of 0/1 literals.
+            ("bit", "((0))", "FALSE"),
+            ("bit", "((1))", "TRUE"),
+            # Double parens around integer literal — peel both.
+            ("int", "((42))", "42"),
+            # Already PG-friendly expression: must be left untouched.
+            ("int", "1 + 1", "1 + 1"),
+            # Unbalanced wrapping must not be peeled.
+            ("int", "(1)+(2)", "(1)+(2)"),
+            # Oracle bare keywords (no parens).
+            ("date", "SYSDATE", "now()"),
+            ("timestamp", "SYSTIMESTAMP", "now()"),
+            ("varchar", "USER", "CURRENT_USER"),
+            # Oracle SYS_GUID() and MySQL UUID().
+            ("uniqueidentifier", "SYS_GUID()", "gen_random_uuid()"),
+            ("uniqueidentifier", "uuid()", "gen_random_uuid()"),
+            # MySQL bit default literal on a boolean-mapped column.
+            ("bit", "b'0'", "FALSE"),
+            ("bit", "b'1'", "TRUE"),
+            # PG-compatible keywords must survive untouched.
+            ("timestamp", "CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP"),
+            ("date", "CURRENT_DATE", "CURRENT_DATE"),
+        ],
+    )
+    def test_default_translation(
+        self, source_type: str, raw_default: str, expected: str
+    ) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        col = Column(name="c", type=source_type, default=raw_default)
+        definition = emitter.column_definition(col)
+        assert definition.endswith(f"DEFAULT {expected}"), definition
+
 
 class TestEmitSchemasAndTables:
     def _db(self) -> Database:
