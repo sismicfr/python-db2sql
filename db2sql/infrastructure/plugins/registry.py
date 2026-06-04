@@ -73,8 +73,11 @@ def _load_entry_points(group: str) -> Dict[str, Any]:
     try:
         eps = metadata.entry_points(group=group)
     except TypeError:
-        legacy = metadata.entry_points()
-        eps = legacy.get(group, [])  # type: ignore[attr-defined]  # pylint: disable=no-member
+        # Python <3.10 fallback: ``entry_points()`` returned a dict-like keyed
+        # by group. Stubs differ across versions, so cast to Any to keep mypy
+        # quiet without a type: ignore that would itself become "unused".
+        legacy = cast(Any, metadata.entry_points())
+        eps = legacy.get(group, [])  # pylint: disable=no-member
     for entry in eps:
         loaded[entry.name] = entry.load()
     return loaded
