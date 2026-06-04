@@ -92,7 +92,9 @@ class RotatingFileSink(AbstractContextManager["RotatingFileSink"]):
         parent = self._current_path.parent
         if str(parent) and not parent.exists():
             parent.mkdir(parents=True, exist_ok=True)
-        self._current_stream = open(self._current_path, "w", encoding="utf-8")
+        self._current_stream = open(  # pylint: disable=consider-using-with
+            self._current_path, "w", encoding="utf-8"
+        )
         self._current_size = 0
 
     def _part_path(self, index: int) -> Path:

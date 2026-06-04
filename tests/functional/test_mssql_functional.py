@@ -12,6 +12,9 @@ What we validate:
    target type from ``PostgresSqlEmitter.DEFAULT_TYPE_MAP``.
 4. The author/book relationship (PK identity + FK + secondary index) is
    surfaced correctly.
+5. MSSQL DEFAULT expressions on ``default_matrix`` (GETDATE, NEWID, SYSTEM_USER,
+   bit literals, ...) are translated to the expected PG equivalents
+   (``now()``, ``gen_random_uuid()``, ``CURRENT_USER``, ``TRUE/FALSE``, ...).
 """
 
 from __future__ import annotations
@@ -120,3 +123,56 @@ def test_mssql_foreign_key_and_index(mssql_metadata) -> None:
     fk = book.columns["author_id"].foreign_key
     assert (fk.schema, fk.table, fk.column) == ("apptest", "author", "id")
     assert any("title" in cols for cols in book.indexes.values())
+
+
+# --------------------------------------------------------------------------- #
+# mssql → pg: DEFAULT-value translation through PostgresSqlEmitter             #
+# --------------------------------------------------------------------------- #
+
+# (column_name, expected DEFAULT clause in the rendered PG column definition).
+# Order matches .docker/mssql/init/01-schema.sql:default_matrix.
+EXPECTED_DEFAULTS = [
+    ("d_getdate", "DEFAULT now()"),
+    ("d_sysdatetime", "DEFAULT LOCALTIMESTAMP"),
+    ("d_getutcdate", "DEFAULT (now() AT TIME ZONE 'utc')"),
+    ("d_sysutcdatetime", "DEFAULT (now() AT TIME ZONE 'utc')"),
+    ("d_sysdatetimeoffset", "DEFAULT now()"),
+    # MSSQL stores CURRENT_TIMESTAMP as ``(getdate())`` in INFORMATION_SCHEMA,
+    # so the emitter cannot distinguish it from a real GETDATE() default.
+    ("d_current_timestamp", "DEFAULT now()"),
+    ("d_newid", "DEFAULT gen_random_uuid()"),
+    ("d_newsequentialid", "DEFAULT gen_random_uuid()"),
+    ("d_suser_sname", "DEFAULT CURRENT_USER"),
+    ("d_system_user", "DEFAULT CURRENT_USER"),
+    ("d_user_name", "DEFAULT CURRENT_USER"),
+    ("d_db_name", "DEFAULT current_database()"),
+    ("d_bit_true", "DEFAULT TRUE"),
+    ("d_bit_false", "DEFAULT FALSE"),
+    ("d_int_literal", "DEFAULT 42"),
+    ("d_string_literal", "DEFAULT 'hello'"),
+]
+
+
+def test_mssql_default_matrix_columns_present(mssql_metadata) -> None:
+    table = mssql_metadata.schemas["apptest"].get_table("default_matrix")
+    assert table is not None
+    for column_name, _ in EXPECTED_DEFAULTS:
+        column = table.columns.get(column_name)
+        assert column is not None, f"column {column_name} missing"
+        assert column.default, f"{column_name}: reader returned empty default"
+
+
+@pytest.mark.parametrize("column_name, expected_clause", EXPECTED_DEFAULTS)
+def test_mssql_to_pg_default_value_mapping(
+    mssql_metadata, column_name: str, expected_clause: str
+) -> None:
+    """MSSQL DEFAULT expressions translate to the expected PG clause."""
+    table = mssql_metadata.schemas["apptest"].get_table("default_matrix")
+    assert table is not None
+    emitter = PostgresSqlEmitter()
+    column = table.columns[column_name]
+    rendered = emitter.column_definition(column)
+    assert expected_clause in rendered, (
+        f"{column_name}: rendered={rendered!r}, expected to contain {expected_clause!r} "
+        f"(raw default from reader: {column.default!r})"
+    )

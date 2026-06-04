@@ -77,7 +77,7 @@ def _resolve_dist_name(module_name: str) -> Optional[str]:
         pass
     try:
         mapping = importlib.metadata.packages_distributions()
-    except Exception:  # noqa: BLE001 — best effort
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         return None
     dists = mapping.get(module_name)
     return dists[0] if dists else None

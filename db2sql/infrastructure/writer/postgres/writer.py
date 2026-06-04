@@ -128,28 +128,25 @@ class PostgresTargetWriter:
     def _connection_string(self) -> str:
         server = self._config.target_server
         port = f":{server.port}" if server.port else ""
-        return "postgresql+psycopg2://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        username = server.username or ""
+        password = server.password or ""
+        hostname = server.hostname or ""
+        dbname = server.dbname or ""
+        return f"postgresql+psycopg2://{username}:{password}@{hostname}{port}/{dbname}"
 
     @property
     def _connection_string_redacted(self) -> str:
         server = self._config.target_server
         port = f":{server.port}" if server.port else ""
-        return "postgresql+psycopg2://{}@{}{}/{}".format(
-            server.username or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        username = server.username or ""
+        hostname = server.hostname or ""
+        dbname = server.dbname or ""
+        return f"postgresql+psycopg2://{username}@{hostname}{port}/{dbname}"
 
     @staticmethod
     def _quote_ident(name: str) -> str:
-        return '"{}"'.format(name.replace('"', '""'))
+        escaped = name.replace('"', '""')
+        return f'"{escaped}"'
 
     # Mirrors PostgresSqlEmitter._format_copy_value so the bytes hitting the
     # server through COPY FROM STDIN are byte-identical to the file dump.

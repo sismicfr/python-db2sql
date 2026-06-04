@@ -19,6 +19,7 @@ GO
 IF OBJECT_ID('apptest.book', 'U') IS NOT NULL DROP TABLE apptest.book;
 IF OBJECT_ID('apptest.author', 'U') IS NOT NULL DROP TABLE apptest.author;
 IF OBJECT_ID('apptest.type_matrix', 'U') IS NOT NULL DROP TABLE apptest.type_matrix;
+IF OBJECT_ID('apptest.default_matrix', 'U') IS NOT NULL DROP TABLE apptest.default_matrix;
 GO
 
 -- Type-coverage table -------------------------------------------------------
@@ -53,6 +54,30 @@ CREATE TABLE apptest.type_matrix (
     c_uniqueidentifier   UNIQUEIDENTIFIER NULL,
     c_xml                XML             NULL,
     computed_full        AS (c_varchar + N' / ' + c_nvarchar)
+);
+GO
+
+-- Default-value coverage table -------------------------------------------
+-- Every column exercises a DEFAULT expression that the postgres emitter is
+-- expected to translate (functions, bare keywords, literals, booleans).
+CREATE TABLE apptest.default_matrix (
+    id                   INT IDENTITY(1,1) PRIMARY KEY,
+    d_getdate            DATETIME         NOT NULL DEFAULT GETDATE(),
+    d_sysdatetime        DATETIME2        NOT NULL DEFAULT SYSDATETIME(),
+    d_getutcdate         DATETIME         NOT NULL DEFAULT GETUTCDATE(),
+    d_sysutcdatetime     DATETIME2        NOT NULL DEFAULT SYSUTCDATETIME(),
+    d_sysdatetimeoffset  DATETIMEOFFSET   NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+    d_current_timestamp  DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    d_newid              UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    d_newsequentialid    UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    d_suser_sname        NVARCHAR(128)    NOT NULL DEFAULT SUSER_SNAME(),
+    d_system_user        NVARCHAR(128)    NOT NULL DEFAULT SYSTEM_USER,
+    d_user_name          NVARCHAR(128)    NOT NULL DEFAULT USER_NAME(),
+    d_db_name            NVARCHAR(128)    NOT NULL DEFAULT DB_NAME(),
+    d_bit_true           BIT              NOT NULL DEFAULT 1,
+    d_bit_false          BIT              NOT NULL DEFAULT 0,
+    d_int_literal        INT              NOT NULL DEFAULT 42,
+    d_string_literal     NVARCHAR(32)     NOT NULL DEFAULT N'hello'
 );
 GO
 

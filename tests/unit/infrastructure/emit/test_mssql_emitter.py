@@ -109,6 +109,51 @@ class TestColumnDefinition:
         col = Column(name="email", type="varchar", char_length=255, nullable=False, default="''")
         assert emitter.column_definition(col) == "[email] nvarchar(255) NOT NULL DEFAULT ''"
 
+    @pytest.mark.parametrize(
+        "source_type, raw_default, expected",
+        [
+            # PG date/time functions translate to MSSQL equivalents.
+            ("timestamp", "now()", "SYSDATETIME()"),
+            ("timestamp", "NOW()", "SYSDATETIME()"),
+            ("timestamp", "LOCALTIMESTAMP", "SYSDATETIME()"),
+            ("date", "CURRENT_DATE", "CAST(SYSDATETIME() AS DATE)"),
+            # Oracle bare keywords.
+            ("date", "SYSDATE", "GETDATE()"),
+            ("timestamp", "SYSTIMESTAMP", "SYSDATETIME()"),
+            # uuid generators from any source.
+            ("uuid", "gen_random_uuid()", "NEWID()"),
+            ("uuid", "uuid_generate_v4()", "NEWID()"),
+            ("uuid", "SYS_GUID()", "NEWID()"),
+            ("uuid", "uuid()", "NEWID()"),
+            # session info: current_database → DB_NAME; CURRENT_USER stays.
+            ("varchar", "current_database()", "DB_NAME()"),
+            ("varchar", "CURRENT_USER", "CURRENT_USER"),
+            ("timestamp", "CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP"),
+            # PG ``literal::type`` cast — strip.
+            ("varchar", "'foo'::text", "'foo'"),
+            ("varchar", "'foo'::character varying(20)", "'foo'"),
+            ("int", "0::integer", "0"),
+            ("int", "NULL::integer", "NULL"),
+            # PG / MySQL boolean literals on bit column.
+            ("boolean", "true", "1"),
+            ("boolean", "false", "0"),
+            ("boolean", "FALSE", "0"),
+            ("bit", "b'1'", "1"),
+            ("bit", "b'0'", "0"),
+            # Already MSSQL-friendly: keep as-is.
+            ("int", "((42))", "42"),
+            ("int", "1 + 1", "1 + 1"),
+            ("int", "(1)+(2)", "(1)+(2)"),
+        ],
+    )
+    def test_default_translation(
+        self, source_type: str, raw_default: str, expected: str
+    ) -> None:
+        emitter = MssqlSqlEmitter(preserve_case=True)
+        col = Column(name="c", type=source_type, default=raw_default)
+        definition = emitter.column_definition(col)
+        assert definition.endswith(f"DEFAULT {expected}"), definition
+
 
 class TestTransactionAndSchemas:
     def test_prologue_uses_begin_transaction(self) -> None:

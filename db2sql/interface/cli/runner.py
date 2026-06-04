@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import getpass
+import signal
 import sys
 import traceback
 from typing import Any, List, Optional, Union
@@ -147,7 +148,9 @@ class Cli:
                 )
                 use_case.execute()
 
-    def exit_code_from(self, exception: Optional[BaseException]) -> ExitCode:
+    def exit_code_from(  # pylint: disable=too-many-return-statements
+        self, exception: Optional[BaseException]
+    ) -> ExitCode:
         logger = self._logger
         if exception is None:
             return SUCCESS
@@ -159,22 +162,10 @@ class Cli:
         if isinstance(exception, ConfigError):
             logger.error(exception.message)
             return ERROR_INVALID_CONFIGURATION
-        if isinstance(exception, UnknownReaderError):
+        if isinstance(exception, (UnknownReaderError, UnknownEmitterError, UnknownWriterError)):
             logger.error(str(exception))
             return ERROR_INVALID_CONFIGURATION
-        if isinstance(exception, UnknownEmitterError):
-            logger.error(str(exception))
-            return ERROR_INVALID_CONFIGURATION
-        if isinstance(exception, UnknownWriterError):
-            logger.error(str(exception))
-            return ERROR_INVALID_CONFIGURATION
-        if isinstance(exception, SourceReaderError):
-            logger.error(exception.message)
-            return ERROR_GENERAL
-        if isinstance(exception, TargetWriterError):
-            logger.error(exception.message)
-            return ERROR_GENERAL
-        if isinstance(exception, DomainError):
+        if isinstance(exception, (SourceReaderError, TargetWriterError, DomainError)):
             logger.error(exception.message)
             return ERROR_GENERAL
         if isinstance(exception, SystemExit):
@@ -185,14 +176,12 @@ class Cli:
         logger.error(traceback.format_exc())
         try:
             logger.error(str(exception))
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             logger.error(repr(exception))
         return ERROR_UNEXPECTED
 
 
 def main(args: Optional[List[str]] = None) -> ExitCode:
-    import signal
-
     def ctrl_c_handler(_signo: Any, _frame: Any) -> None:
         print("You pressed Ctrl+C!")
         sys.exit(2)
@@ -216,6 +205,6 @@ def main(args: Optional[List[str]] = None) -> ExitCode:
         result = cli.run(args if args is not None else sys.argv[1:])
         if result is not None and result != SUCCESS:
             error = result
-    except BaseException as exc:
+    except BaseException as exc:  # pylint: disable=broad-exception-caught
         error = cli.exit_code_from(exc)
     return error

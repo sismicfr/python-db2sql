@@ -36,13 +36,11 @@ class PostgresSourceReader:
     def _connection_string(self) -> str:
         server = self._config.server
         port = f":{server.port}" if server.port else ""
-        return "postgresql+psycopg2://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        username = server.username or ""
+        password = server.password or ""
+        hostname = server.hostname or ""
+        dbname = server.dbname or ""
+        return f"postgresql+psycopg2://{username}:{password}@{hostname}{port}/{dbname}"
 
     def collect_metadata(self) -> Database:
         database = Database(str(self._config.server.dbname or ""))
