@@ -42,6 +42,13 @@ changes directly to a live target database (migrate mode).
 
       YAML/JSON configuration file: all keys, defaults, and examples.
 
+   .. grid-item-card:: :octicon:`arrow-switch` Dialect mapping
+      :link: dialect-mapping
+      :link-type: doc
+
+      How column types and ``DEFAULT`` expressions (``GETDATE()``,
+      ``NEWID()``, ``now()``, …) are translated between source and target.
+
    .. grid-item-card:: :octicon:`code` API Reference
       :link: api/index
       :link-type: doc
@@ -100,6 +107,7 @@ Contents
    installation
    cli
    configuration
+   dialect-mapping
    plugins
    api/index
    changelog
