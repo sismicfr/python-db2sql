@@ -130,7 +130,7 @@ jobs:
     permissions:
       id-token: write   # OIDC token used by trusted publishing
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist
