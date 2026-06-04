@@ -34,13 +34,11 @@ class MSSQLSourceReader:
     def _connection_string(self) -> str:
         server = self._config.server
         port = f":{server.port}" if server.port else ""
-        return "mssql+pymssql://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        username = server.username or ""
+        password = server.password or ""
+        hostname = server.hostname or ""
+        dbname = server.dbname or ""
+        return f"mssql+pymssql://{username}:{password}@{hostname}{port}/{dbname}"
 
     def collect_metadata(self) -> Database:
         database = Database(str(self._config.server.dbname or ""))

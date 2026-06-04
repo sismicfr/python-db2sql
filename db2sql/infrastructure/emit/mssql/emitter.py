@@ -147,7 +147,8 @@ class MssqlSqlEmitter:
 
     def quote_identifier(self, name: str) -> str:
         normalized = self._normalize(name)
-        return "[{}]".format(normalized.replace("]", "]]"))
+        escaped = normalized.replace("]", "]]")
+        return f"[{escaped}]"
 
     def schema_name(self, schema: Schema) -> str:
         mapped = self._schema_mapping.get(schema.name, schema.name)

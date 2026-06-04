@@ -34,13 +34,11 @@ class MySQLSourceReader:
     def _connection_string(self) -> str:
         server = self._config.server
         port = f":{server.port}" if server.port else ""
-        return "mysql+pymysql://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        username = server.username or ""
+        password = server.password or ""
+        hostname = server.hostname or ""
+        dbname = server.dbname or ""
+        return f"mysql+pymysql://{username}:{password}@{hostname}{port}/{dbname}"
 
     @property
     def _database_name(self) -> str:

@@ -74,7 +74,7 @@ def _load_entry_points(group: str) -> Dict[str, Any]:
         eps = metadata.entry_points(group=group)
     except TypeError:
         legacy = metadata.entry_points()
-        eps = legacy.get(group, [])  # type: ignore[attr-defined]
+        eps = legacy.get(group, [])  # type: ignore[attr-defined]  # pylint: disable=no-member
     for entry in eps:
         loaded[entry.name] = entry.load()
     return loaded

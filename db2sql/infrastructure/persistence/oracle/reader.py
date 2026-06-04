@@ -102,7 +102,7 @@ class OracleSourceReader:
         options = server.options or {}
         driver = options.get("driver", "oracledb")
         port = f":{server.port}" if server.port else ""
-        userinfo = "{}:{}".format(server.username or "", server.password or "")
+        userinfo = f"{server.username or ''}:{server.password or ''}"
         host = server.hostname or ""
         service_name = options.get("service_name")
         sid = options.get("sid")
@@ -150,7 +150,7 @@ class OracleSourceReader:
         owner = self._schema_filter
         params: Dict[str, Any] = {}
         if owner:
-            query = "SELECT DISTINCT OWNER FROM ALL_TABLES " "WHERE OWNER = :owner ORDER BY OWNER"
+            query = "SELECT DISTINCT OWNER FROM ALL_TABLES WHERE OWNER = :owner ORDER BY OWNER"
             params["owner"] = owner
         else:
             query = (
@@ -342,7 +342,7 @@ class OracleSourceReader:
                 ),
                 params,
             )
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             return
         for row in rows:
             table = database.get_table(row.owner, row.table_name)

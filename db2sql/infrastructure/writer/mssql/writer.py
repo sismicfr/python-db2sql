@@ -130,25 +130,22 @@ class MssqlTargetWriter:
     def _connection_string(self) -> str:
         server = self._config.target_server
         port = f":{server.port}" if server.port else ""
-        return "mssql+pymssql://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        username = server.username or ""
+        password = server.password or ""
+        hostname = server.hostname or ""
+        dbname = server.dbname or ""
+        return f"mssql+pymssql://{username}:{password}@{hostname}{port}/{dbname}"
 
     @property
     def _connection_string_redacted(self) -> str:
         server = self._config.target_server
         port = f":{server.port}" if server.port else ""
-        return "mssql+pymssql://{}@{}{}/{}".format(
-            server.username or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        username = server.username or ""
+        hostname = server.hostname or ""
+        dbname = server.dbname or ""
+        return f"mssql+pymssql://{username}@{hostname}{port}/{dbname}"
 
     @staticmethod
     def _quote_ident(name: str) -> str:
-        return "[{}]".format(name.replace("]", "]]"))
+        escaped = name.replace("]", "]]")
+        return f"[{escaped}]"
