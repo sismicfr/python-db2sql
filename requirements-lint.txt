@@ -1,6 +1,6 @@
 -r requirements.txt
 build==1.2.1
-black==24.10.0
+black==26.3.1
 commitizen==3.31.0
 flake8==7.1.1
 import-linter==2.1

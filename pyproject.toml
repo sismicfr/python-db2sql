@@ -69,6 +69,7 @@ repository = "http://github.com/sismicfr/python-db2sql.git"
 
 [tool.black]
 line-length = 100
+target-version = ["py39"]
 
 [flake8]
 exclude = [".git",".venv",".tox","dist","docs","*egg,build"]
