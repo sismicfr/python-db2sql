@@ -39,9 +39,7 @@ _DEFAULT_FUNCTION_MAP: Dict[str, str] = {
     "current_schema": "SCHEMA_NAME()",
 }
 
-_FUNCTION_CALL_RE = re.compile(
-    r"^\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*$"
-)
+_FUNCTION_CALL_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*$")
 # PG ``literal::type`` cast — only when the whole expression is a single
 # literal followed by a single cast. Anything more complex is left as-is.
 _PG_CAST_RE = re.compile(

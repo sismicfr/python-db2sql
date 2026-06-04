@@ -37,9 +37,7 @@ _DEFAULT_FUNCTION_MAP: Dict[str, str] = {
 }
 
 _UNICODE_STRING_RE = re.compile(r"(?i)\bN'")
-_FUNCTION_CALL_RE = re.compile(
-    r"^\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*$"
-)
+_FUNCTION_CALL_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*$")
 # MySQL ``bit`` default literal — ``b'0'`` / ``b'1'``.
 _MYSQL_BIT_RE = re.compile(r"^(?i:b)'([01]+)'$")
 
