@@ -6,7 +6,7 @@ import io
 
 import pytest
 
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import Column, Database, ForeignKey, ForeignKeyConstraint, Schema, Table
 from db2sql.infrastructure.emit.postgres import PostgresSqlEmitter
 
 
@@ -137,6 +137,9 @@ class TestEmitSchemasAndTables:
         col = Column(name="author_id", type="int")
         col.foreign_key = ForeignKey("missing", "author", "id")
         book.add_column(col)
+        book.foreign_key_constraints.append(
+            ForeignKeyConstraint("fk_book_author", "missing", "author", ("author_id",), ("id",))
+        )
         db.schemas["public"].add_table(book)
 
         sink = _Sink()
@@ -150,6 +153,9 @@ class TestEmitSchemasAndTables:
         col = Column(name="author_id", type="int")
         col.foreign_key = ForeignKey("public", "author", "id")
         book.add_column(col)
+        book.foreign_key_constraints.append(
+            ForeignKeyConstraint("fk_book_author", "public", "author", ("author_id",), ("id",))
+        )
         db.schemas["public"].add_table(book)
         sink = _Sink()
         emitter.emit_foreign_keys(db, sink)
@@ -244,6 +250,23 @@ class TestEmitSchemasAndTables:
         emitter.emit_truncates(db, sink)
         assert '"public"."author"' in sink.text
 
+    def test_emit_foreign_keys_composite(self) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        db = self._db()
+        child = Table(name="child")
+        child.add_column(Column(name="a", type="int"))
+        child.add_column(Column(name="b", type="int"))
+        child.foreign_key_constraints.append(
+            ForeignKeyConstraint(
+                "fk_child_author", "public", "author", ("a", "b"), ("id", "name")
+            )
+        )
+        db.schemas["public"].add_table(child)
+        sink = _Sink()
+        emitter.emit_foreign_keys(db, sink)
+        assert 'ADD FOREIGN KEY ("a", "b")' in sink.text
+        assert 'REFERENCES "public"."author" ("id", "name")' in sink.text
+
     def test_emit_foreign_keys_skips_when_ref_table_missing(self) -> None:
         emitter = PostgresSqlEmitter(preserve_case=True)
         db = self._db()
@@ -252,6 +275,11 @@ class TestEmitSchemasAndTables:
         col = Column(name="author_id", type="int")
         col.foreign_key = ForeignKey("public", "no_such_table", "id")
         book.add_column(col)
+        book.foreign_key_constraints.append(
+            ForeignKeyConstraint(
+                "fk_book_nosuch", "public", "no_such_table", ("author_id",), ("id",)
+            )
+        )
         db.schemas["public"].add_table(book)
         sink = _Sink()
         emitter.emit_foreign_keys(db, sink)

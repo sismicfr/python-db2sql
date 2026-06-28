@@ -13,12 +13,14 @@ from __future__ import annotations
 import io
 from types import TracebackType
 from typing import Any, Iterator, Optional, Tuple
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
 from db2sql.application.ports import Logger
 from db2sql.domain.model import Table
+from db2sql.domain.policy import normalize_identifier
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.writer.errors import (
     TargetWriterConnectionError,
@@ -38,6 +40,7 @@ class PostgresTargetWriter:
     def __init__(self, config: AppConfig, logger: Logger) -> None:
         self._config = config
         self._logger = logger
+        self._preserve_case: bool = config.dump.preserve_case
         self._engine: Optional[Engine] = None
         self._connection: Optional[Connection] = None
 
@@ -129,8 +132,8 @@ class PostgresTargetWriter:
         server = self._config.target_server
         port = f":{server.port}" if server.port else ""
         return "postgresql+psycopg2://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
+            quote_plus(server.username or ""),
+            quote_plus(server.password or ""),
             server.hostname or "",
             port,
             server.dbname or "",
@@ -147,9 +150,9 @@ class PostgresTargetWriter:
             server.dbname or "",
         )
 
-    @staticmethod
-    def _quote_ident(name: str) -> str:
-        return '"{}"'.format(name.replace('"', '""'))
+    def _quote_ident(self, name: str) -> str:
+        normalized = normalize_identifier(name, self._preserve_case)
+        return '"{}"'.format(normalized.replace('"', '""'))
 
     # Mirrors PostgresSqlEmitter._format_copy_value so the bytes hitting the
     # server through COPY FROM STDIN are byte-identical to the file dump.

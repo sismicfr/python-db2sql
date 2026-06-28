@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import (
+    Column,
+    Database,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Schema,
+    Table,
+)
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
@@ -102,7 +110,9 @@ class OracleSourceReader:
         options = server.options or {}
         driver = options.get("driver", "oracledb")
         port = f":{server.port}" if server.port else ""
-        userinfo = "{}:{}".format(server.username or "", server.password or "")
+        userinfo = "{}:{}".format(
+            quote_plus(server.username or ""), quote_plus(server.password or "")
+        )
         host = server.hostname or ""
         service_name = options.get("service_name")
         sid = options.get("sid")
@@ -272,6 +282,7 @@ class OracleSourceReader:
         rows = self._ensure_session().execute(
             text(
                 "SELECT cc.OWNER, cc.TABLE_NAME, cc.COLUMN_NAME, cc.POSITION, "
+                "       cc.CONSTRAINT_NAME, "
                 "       rc.OWNER AS REF_OWNER, rc.TABLE_NAME AS REF_TABLE, "
                 "       rc.COLUMN_NAME AS REF_COLUMN "
                 "FROM ALL_CONSTRAINTS c "
@@ -288,14 +299,37 @@ class OracleSourceReader:
             ),
             params,
         )
+
+        groups: Dict[Tuple[str, str, str], List[Any]] = {}
         for row in rows:
-            table = database.get_table(row.owner, row.table_name)
+            key = (row.owner, row.table_name, row.constraint_name)
+            groups.setdefault(key, []).append(row)
+
+        for (schema_name, table_name, constraint_name), fk_rows in groups.items():
+            table = database.get_table(schema_name, table_name)
             if table is None:
                 continue
-            column = table.get_column(row.column_name)
-            if column is None:
-                continue
-            column.foreign_key = ForeignKey(row.ref_owner, row.ref_table, row.ref_column)
+            cols: List[str] = []
+            ref_cols: List[str] = []
+            valid = True
+            for row in fk_rows:
+                column = table.get_column(row.column_name)
+                if column is None:
+                    valid = False
+                    break
+                column.foreign_key = ForeignKey(row.ref_owner, row.ref_table, row.ref_column)
+                cols.append(row.column_name)
+                ref_cols.append(row.ref_column)
+            if valid and cols:
+                table.foreign_key_constraints.append(
+                    ForeignKeyConstraint(
+                        name=constraint_name,
+                        ref_schema=fk_rows[0].ref_owner,
+                        ref_table=fk_rows[0].ref_table,
+                        columns=tuple(cols),
+                        ref_columns=tuple(ref_cols),
+                    )
+                )
 
     def _read_indexes(self, database: Database) -> None:
         owner = self._schema_filter

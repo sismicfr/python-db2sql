@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import (
+    Column,
+    Database,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Schema,
+    Table,
+)
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
@@ -117,12 +124,36 @@ class SQLiteSourceReader:
         table = database.get_table(self._schema, table_name)
         if table is None:
             return
+
+        # Group rows by constraint id (first element of each PRAGMA row)
+        groups: Dict[int, List[Tuple[str, str, str]]] = {}
         for row in rows:
-            _, _, ref_table, src_col, ref_col, *_ = row
-            column = table.get_column(src_col)
-            if column is None:
-                continue
-            column.foreign_key = ForeignKey(self._schema, ref_table, ref_col)
+            fk_id, _, ref_table, src_col, ref_col, *_ = row
+            groups.setdefault(fk_id, []).append((ref_table, src_col, ref_col))
+
+        for fk_id, fk_rows in groups.items():
+            cols: List[str] = []
+            ref_cols: List[str] = []
+            valid = True
+            ref_table = fk_rows[0][0]
+            for _, src_col, ref_col in fk_rows:
+                column = table.get_column(src_col)
+                if column is None:
+                    valid = False
+                    break
+                column.foreign_key = ForeignKey(self._schema, ref_table, ref_col)
+                cols.append(src_col)
+                ref_cols.append(ref_col)
+            if valid and cols:
+                table.foreign_key_constraints.append(
+                    ForeignKeyConstraint(
+                        name=f"{table_name}_fk_{fk_id}",
+                        ref_schema=self._schema,
+                        ref_table=ref_table,
+                        columns=tuple(cols),
+                        ref_columns=tuple(ref_cols),
+                    )
+                )
 
     def iter_rows(self, schema: str, table: Table, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
         session = self._ensure_session()

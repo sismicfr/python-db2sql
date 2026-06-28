@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import (
+    Column,
+    Database,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Schema,
+    Table,
+)
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
@@ -35,8 +43,8 @@ class MySQLSourceReader:
         server = self._config.server
         port = f":{server.port}" if server.port else ""
         return "mysql+pymysql://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
+            quote_plus(server.username or ""),
+            quote_plus(server.password or ""),
             server.hostname or "",
             port,
             server.dbname or "",
@@ -129,24 +137,49 @@ class MySQLSourceReader:
     def _read_foreign_keys(self, database: Database) -> None:
         rows = self._ensure_session().execute(
             text(
-                "SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME "
+                "SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME, "
+                "REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME "
                 "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE "
-                "WHERE TABLE_SCHEMA = :schema AND REFERENCED_TABLE_NAME IS NOT NULL"
+                "WHERE TABLE_SCHEMA = :schema AND REFERENCED_TABLE_NAME IS NOT NULL "
+                "ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION"
             ),
             {"schema": self._database_name},
         )
+
+        groups: Dict[Tuple[str, str], List[Any]] = {}
         for row in rows:
-            table = database.get_table(self._database_name, row.TABLE_NAME)
+            key = (row.TABLE_NAME, row.CONSTRAINT_NAME)
+            groups.setdefault(key, []).append(row)
+
+        for (table_name, constraint_name), fk_rows in groups.items():
+            table = database.get_table(self._database_name, table_name)
             if table is None:
                 continue
-            column = table.get_column(row.COLUMN_NAME)
-            if column is None:
-                continue
-            column.foreign_key = ForeignKey(
-                self._database_name,
-                row.REFERENCED_TABLE_NAME,
-                row.REFERENCED_COLUMN_NAME,
-            )
+            cols: List[str] = []
+            ref_cols: List[str] = []
+            valid = True
+            for row in fk_rows:
+                column = table.get_column(row.COLUMN_NAME)
+                if column is None:
+                    valid = False
+                    break
+                column.foreign_key = ForeignKey(
+                    self._database_name,
+                    row.REFERENCED_TABLE_NAME,
+                    row.REFERENCED_COLUMN_NAME,
+                )
+                cols.append(row.COLUMN_NAME)
+                ref_cols.append(row.REFERENCED_COLUMN_NAME)
+            if valid and cols:
+                table.foreign_key_constraints.append(
+                    ForeignKeyConstraint(
+                        name=constraint_name,
+                        ref_schema=self._database_name,
+                        ref_table=fk_rows[0].REFERENCED_TABLE_NAME,
+                        columns=tuple(cols),
+                        ref_columns=tuple(ref_cols),
+                    )
+                )
 
     def _read_indexes(self, database: Database) -> None:
         rows = self._ensure_session().execute(

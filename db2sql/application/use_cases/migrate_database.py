@@ -94,7 +94,10 @@ class MigrateDatabaseUseCase:
                     rows = self._reader.iter_query_rows(table.source_query, limit=limit)
                 else:
                     rows = self._reader.iter_rows(schema_name, table, limit=limit)
-                self._writer.bulk_load(schema_name, table, rows)
+                mapped = options.mapping_schemas.get(
+                    schema_name, options.mapping_schemas.get("*", schema_name)
+                )
+                self._writer.bulk_load(mapped, table, rows)
 
     @staticmethod
     def _resolve_limit(

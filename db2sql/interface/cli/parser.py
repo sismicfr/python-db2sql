@@ -313,6 +313,15 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         help="Table names to exclude during export (repeatable, comma separated).",
     )
     parser.add_argument(
+        "--target-schema",
+        dest="target_schema",
+        metavar="NAME",
+        type=str,
+        default=None,
+        help="Redirect all source schemas to NAME in the target.",
+        action=OnceArgument,
+    )
+    parser.add_argument(
         "-C",
         "--config-file",
         metavar="PATH",
@@ -513,6 +522,15 @@ def _add_migrate_subparser(subparsers: Any) -> None:
             "with --no-transaction to let the target driver auto-commit each "
             "statement."
         ),
+    )
+    migrate_parser.add_argument(
+        "--target-schema",
+        dest="target_schema",
+        metavar="NAME",
+        type=str,
+        default=None,
+        help="Redirect all source schemas to NAME in the target.",
+        action=OnceArgument,
     )
 
 

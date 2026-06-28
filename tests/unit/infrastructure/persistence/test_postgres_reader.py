@@ -100,6 +100,7 @@ def _populated_session() -> FakeSession:
         "REFERENTIAL_CONSTRAINTS",
         [
             FakeRow(
+                constraint_name="fk_book_author",
                 table_schema="public",
                 table_name="book",
                 column_name="author_id",
@@ -107,8 +108,9 @@ def _populated_session() -> FakeSession:
                 ref_table="author",
                 ref_column="id",
             ),
-            # column missing → ignored
+            # column missing → ignored (separate constraint)
             FakeRow(
+                constraint_name="fk_book_zzz",
                 table_schema="public",
                 table_name="book",
                 column_name="zzz",
@@ -118,6 +120,7 @@ def _populated_session() -> FakeSession:
             ),
             # table missing
             FakeRow(
+                constraint_name="fk_phantom_x",
                 table_schema="public",
                 table_name="phantom",
                 column_name="x",

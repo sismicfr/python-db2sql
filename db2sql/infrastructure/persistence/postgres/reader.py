@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import (
+    Column,
+    Database,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Schema,
+    Table,
+)
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
@@ -37,8 +45,8 @@ class PostgresSourceReader:
         server = self._config.server
         port = f":{server.port}" if server.port else ""
         return "postgresql+psycopg2://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
+            quote_plus(server.username or ""),
+            quote_plus(server.password or ""),
             server.hostname or "",
             port,
             server.dbname or "",
@@ -123,7 +131,8 @@ class PostgresSourceReader:
     def _read_foreign_keys(self, database: Database) -> None:
         rows = self._ensure_session().execute(
             text(
-                "SELECT k1.TABLE_SCHEMA, k1.TABLE_NAME, k1.COLUMN_NAME, "
+                "SELECT rc.CONSTRAINT_NAME, "
+                "       k1.TABLE_SCHEMA, k1.TABLE_NAME, k1.COLUMN_NAME, "
                 "       k2.TABLE_SCHEMA AS REF_SCHEMA, k2.TABLE_NAME AS REF_TABLE, "
                 "       k2.COLUMN_NAME AS REF_COLUMN "
                 "FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc "
@@ -134,17 +143,41 @@ class PostgresSourceReader:
                 "  ON k2.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME "
                 " AND k2.CONSTRAINT_SCHEMA = rc.UNIQUE_CONSTRAINT_SCHEMA "
                 " AND k1.ORDINAL_POSITION = k2.ORDINAL_POSITION "
-                f"WHERE k1.TABLE_SCHEMA NOT IN {_SYSTEM_SCHEMAS}"
+                f"WHERE k1.TABLE_SCHEMA NOT IN {_SYSTEM_SCHEMAS} "
+                "ORDER BY rc.CONSTRAINT_NAME, k1.ORDINAL_POSITION"
             )
         )
+
+        groups: Dict[Tuple[str, str, str], List[Any]] = {}
         for row in rows:
-            table = database.get_table(row.table_schema, row.table_name)
+            key = (row.table_schema, row.table_name, row.constraint_name)
+            groups.setdefault(key, []).append(row)
+
+        for (schema_name, table_name, constraint_name), fk_rows in groups.items():
+            table = database.get_table(schema_name, table_name)
             if table is None:
                 continue
-            column = table.get_column(row.column_name)
-            if column is None:
-                continue
-            column.foreign_key = ForeignKey(row.ref_schema, row.ref_table, row.ref_column)
+            cols: List[str] = []
+            ref_cols: List[str] = []
+            valid = True
+            for row in fk_rows:
+                column = table.get_column(row.column_name)
+                if column is None:
+                    valid = False
+                    break
+                column.foreign_key = ForeignKey(row.ref_schema, row.ref_table, row.ref_column)
+                cols.append(row.column_name)
+                ref_cols.append(row.ref_column)
+            if valid and cols:
+                table.foreign_key_constraints.append(
+                    ForeignKeyConstraint(
+                        name=constraint_name,
+                        ref_schema=fk_rows[0].ref_schema,
+                        ref_table=fk_rows[0].ref_table,
+                        columns=tuple(cols),
+                        ref_columns=tuple(ref_cols),
+                    )
+                )
 
     def _read_indexes(self, database: Database) -> None:
         rows = self._ensure_session().execute(

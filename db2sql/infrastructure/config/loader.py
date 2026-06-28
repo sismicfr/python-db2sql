@@ -139,6 +139,9 @@ def merge_cli_overrides(config: AppConfig, options: Mapping[str, Any]) -> AppCon
             dump["default_data_format"] = value
         elif key == "output_file_name":
             data["output_file"] = value
+        elif key == "target_schema":
+            schemas = dump.setdefault("mapping_schemas", {})
+            schemas["*"] = value
         elif key == "split_size":
             data["split_size"] = value
 

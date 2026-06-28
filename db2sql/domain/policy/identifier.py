@@ -8,7 +8,14 @@ _CAMEL_RE = re.compile(r"(?<!^)(?=[A-Z])")
 
 
 def to_snake_case(name: str) -> str:
-    """Convert CamelCase to snake_case (idempotent on already-snake_case input)."""
+    """Convert CamelCase to snake_case (idempotent on already-snake_case input).
+
+    Pure-uppercase names (e.g. ``CLIENTS``) are lowered without inserting
+    underscores, so ``CLIENTS`` becomes ``clients`` rather than ``c_l_i_e_n_t_s``.
+    Mixed-case names like ``ClientName`` become ``client_name``.
+    """
+    if name.isupper() or name.islower():
+        return name.lower()
     return _CAMEL_RE.sub("_", name).lower()
 
 

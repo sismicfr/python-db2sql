@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import (
+    Column,
+    Database,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Schema,
+    Table,
+)
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
@@ -35,8 +43,8 @@ class MSSQLSourceReader:
         server = self._config.server
         port = f":{server.port}" if server.port else ""
         return "mssql+pymssql://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
+            quote_plus(server.username or ""),
+            quote_plus(server.password or ""),
             server.hostname or "",
             port,
             server.dbname or "",
@@ -254,21 +262,46 @@ JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE KCU2
   AND KCU2.CONSTRAINT_NAME = RC.UNIQUE_CONSTRAINT_NAME
 WHERE KCU1.ORDINAL_POSITION = KCU2.ORDINAL_POSITION
   AND KCU1.TABLE_SCHEMA not in ('sys', 'guest', 'information_schema')
-ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME, KCU1.ORDINAL_POSITION
         """
             )
         )
 
+        # Group FK rows by (schema, table, constraint_name)
+        groups: Dict[Tuple[str, str, str], List[Any]] = {}
         for row in r:
-            table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
-            if table:
+            key = (row.TABLE_SCHEMA, row.TABLE_NAME, row.CONSTRAINT_NAME)
+            groups.setdefault(key, []).append(row)
+
+        for (schema_name, table_name, constraint_name), rows in groups.items():
+            table = database.get_table(schema_name, table_name)
+            if table is None:
+                continue
+            cols: List[str] = []
+            ref_cols: List[str] = []
+            valid = True
+            for row in rows:
                 column = table.get_column(row.COLUMN_NAME)
-                if column:
-                    column.foreign_key = ForeignKey(
-                        row.UNIQUE_TABLE_SCHEMA,
-                        row.UNIQUE_TABLE_NAME,
-                        row.UNIQUE_COLUMN_NAME,
+                if column is None:
+                    valid = False
+                    break
+                column.foreign_key = ForeignKey(
+                    row.UNIQUE_TABLE_SCHEMA,
+                    row.UNIQUE_TABLE_NAME,
+                    row.UNIQUE_COLUMN_NAME,
+                )
+                cols.append(row.COLUMN_NAME)
+                ref_cols.append(row.UNIQUE_COLUMN_NAME)
+            if valid and cols:
+                table.foreign_key_constraints.append(
+                    ForeignKeyConstraint(
+                        name=constraint_name,
+                        ref_schema=rows[0].UNIQUE_TABLE_SCHEMA,
+                        ref_table=rows[0].UNIQUE_TABLE_NAME,
+                        columns=tuple(cols),
+                        ref_columns=tuple(ref_cols),
                     )
+                )
 
     def _read_indexes(self, database: Database) -> None:
         r: engine.Result[Any] = self._ensure_session().execute(

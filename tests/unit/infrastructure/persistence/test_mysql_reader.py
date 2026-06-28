@@ -104,18 +104,21 @@ def _full_plan() -> FakeSession:
         "REFERENCED_TABLE_NAME IS NOT NULL",
         [
             FakeRow(
+                CONSTRAINT_NAME="fk_book_author",
                 TABLE_NAME="book",
                 COLUMN_NAME="author_id",
                 REFERENCED_TABLE_NAME="author",
                 REFERENCED_COLUMN_NAME="id",
             ),
             FakeRow(
+                CONSTRAINT_NAME="fk_book_missing",
                 TABLE_NAME="book",
                 COLUMN_NAME="missing_col",
                 REFERENCED_TABLE_NAME="author",
                 REFERENCED_COLUMN_NAME="id",
             ),
             FakeRow(
+                CONSTRAINT_NAME="fk_ghost_author",
                 TABLE_NAME="ghost",
                 COLUMN_NAME="x",
                 REFERENCED_TABLE_NAME="author",

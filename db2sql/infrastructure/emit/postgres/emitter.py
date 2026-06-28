@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from db2sql.application.ports import OutputSink
 from db2sql.domain.model import Column, Database, Schema, Table
 from db2sql.domain.policy import drop_order, normalize_identifier, topological_order
+
+_DEFAULT_FUNCTION_MAP: Dict[str, str] = {
+    "getdate()": "now()",
+    "getutcdate()": "(now() AT TIME ZONE 'UTC')",
+    "sysdatetime()": "now()",
+    "sysutcdatetime()": "(now() AT TIME ZONE 'UTC')",
+    "newid()": "gen_random_uuid()",
+    "newsequentialid()": "gen_random_uuid()",
+}
+
+_DEFAULT_FUNCTION_RE = re.compile(
+    "|".join(re.escape(k) for k in _DEFAULT_FUNCTION_MAP),
+    re.IGNORECASE,
+)
 
 
 class PostgresSqlEmitter:
@@ -93,7 +108,7 @@ class PostgresSqlEmitter:
         return '"{}"'.format(normalized.replace('"', '""'))
 
     def schema_name(self, schema: Schema) -> str:
-        mapped = self._schema_mapping.get(schema.name, schema.name)
+        mapped = self._schema_mapping.get(schema.name, self._schema_mapping.get("*", schema.name))
         return self.quote_identifier(mapped)
 
     def table_name(self, schema: Schema, table: Table) -> str:
@@ -106,7 +121,17 @@ class PostgresSqlEmitter:
             if column.char_length and column.char_length > 0:
                 return f"{target}({column.char_length})"
         if target == "numeric" and column.precision:
-            scale = column.scale or 0
+            scale = column.scale if column.scale is not None else 0
+            if column.scale is not None and scale == 0:
+                # numeric(p,0) is an integer stored in a decimal type (common
+                # MSSQL pattern). Promote to a native integer type so that
+                # serial/bigserial works for identity columns and FK types
+                # stay consistent across referencing tables.
+                if column.precision > 9:
+                    return "bigint"
+                if column.precision > 4:
+                    return "integer"
+                return "smallint"
             return f"numeric({column.precision},{scale})"
         return target
 
@@ -118,8 +143,19 @@ class PostgresSqlEmitter:
         if not column.nullable and not column.identity:
             parts.append("NOT NULL")
         if column.default is not None and not column.identity:
-            parts.append(f"DEFAULT {column.default}")
+            parts.append(f"DEFAULT {self._translate_default(column.default)}")
         return " ".join(parts)
+
+    @staticmethod
+    def _translate_default(default: str) -> str:
+        """Translate source-dialect default expressions to PostgreSQL."""
+        # Strip wrapping parentheses added by MSSQL (e.g. "(getdate())")
+        stripped = default.strip()
+        while stripped.startswith("(") and stripped.endswith(")"):
+            stripped = stripped[1:-1].strip()
+        return _DEFAULT_FUNCTION_RE.sub(
+            lambda m: _DEFAULT_FUNCTION_MAP[m.group(0).lower()], stripped
+        )
 
     # ---- emit -------------------------------------------------------------
 
@@ -134,7 +170,9 @@ class PostgresSqlEmitter:
     def emit_schemas(self, database: Database, sink: OutputSink) -> None:
         emitted = set()
         for schema in database.schemas.values():
-            target = self._schema_mapping.get(schema.name, schema.name)
+            target = self._schema_mapping.get(
+                schema.name, self._schema_mapping.get("*", schema.name)
+            )
             if target in emitted:
                 continue
             emitted.add(target)
@@ -190,22 +228,20 @@ class PostgresSqlEmitter:
         for schema in database.schemas.values():
             for table in schema.tables.values():
                 qualified = self.table_name(schema, table)
-                for column in table.columns.values():
-                    fk = column.foreign_key
-                    if not fk:
-                        continue
-                    ref_schema = database.schemas.get(fk.schema)
+                for fkc in table.foreign_key_constraints:
+                    ref_schema = database.schemas.get(fkc.ref_schema)
                     if ref_schema is None:
                         continue
-                    ref_table = ref_schema.get_table(fk.table)
+                    ref_table = ref_schema.get_table(fkc.ref_table)
                     if ref_table is None:
                         continue
                     ref_qualified = self.table_name(ref_schema, ref_table)
+                    cols = ", ".join(self.quote_identifier(c) for c in fkc.columns)
+                    ref_cols = ", ".join(self.quote_identifier(c) for c in fkc.ref_columns)
                     sink.write(
                         f"ALTER TABLE {qualified} "
-                        f"ADD FOREIGN KEY ({self.quote_identifier(column.name)}) "
-                        f"REFERENCES {ref_qualified} "
-                        f"({self.quote_identifier(fk.column)});\n"
+                        f"ADD FOREIGN KEY ({cols}) "
+                        f"REFERENCES {ref_qualified} ({ref_cols});\n"
                     )
                     sink.boundary()
         sink.write("\n")
