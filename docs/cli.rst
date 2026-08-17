@@ -8,14 +8,14 @@ Synopsis
 
    db2sql [GLOBAL OPTIONS] COMMAND [OPTIONS]
 
-   db2sql dump [SOURCE OPTIONS] [FILTERING OPTIONS]
+   db2sql dump [SOURCE OPTIONS | --source-dsn URL] [FILTERING OPTIONS]
                [-f PATH] [--split-size SIZE]
                [--on-existing {fail,drop,truncate}]
                [--transaction | --no-transaction]
-   db2sql migrate [SOURCE OPTIONS] [FILTERING OPTIONS]
+   db2sql migrate [SOURCE OPTIONS | --source-dsn URL] [FILTERING OPTIONS]
                   [--target-host HOST] [--target-port PORT] [--target-dbname DB]
                   [--target-user USER] [--target-password PWD]
-                  [--target-driver NAME]
+                  [--target-driver NAME] [--target-dsn URL]
                   [--on-existing {fail,drop,truncate}]
                   [--transaction-mode {single,per_table}]
                   [--transaction | --no-transaction]
@@ -151,6 +151,48 @@ Connection
 
    Prompt for the database password interactively instead of reading it from
    :option:`-p` or the environment variable.
+
+.. option:: --source-dsn URL
+
+   Full SQLAlchemy URL for the source database, e.g.
+   ``postgresql+psycopg2://user:pwd@host:5432/db?sslmode=require``.
+
+   This is the escape hatch for anything the discrete flags cannot express:
+   driver-specific query parameters (``sslmode``, ``charset``,
+   ``TrustServerCertificate``, ``ApplicationIntent``…), an alternative DBAPI
+   for the same dialect (``postgresql+asyncpg://``), or the Oracle
+   ``service_name`` / ``sid`` selection that otherwise requires a config file.
+
+   **It replaces the connection, it does not merge with it.** Because the two
+   cannot be reconciled, ``db2sql`` distinguishes a contradiction from an
+   override:
+
+   * **Rejected** — a DSN and any of :option:`-H`, :option:`-P`,
+     :option:`-d`, :option:`-u`, :option:`-p`, :option:`-W` on the *same
+     command line*, or ``dsn`` next to those keys in the *same config file*.
+     Both spellings state two different connections at once, which is a
+     mistake rather than an intent. The command fails before connecting.
+   * **Allowed, with a warning** — a DSN on the command line overriding a
+     ``server:`` section from a config file, or ``DB2SQL_HOST`` and friends
+     from the environment. This is the ordinary precedence order at work; the
+     warning lists exactly which settings were dropped.
+
+   The dialect of the URL must match the dialect the selected
+   :option:`--driver` expects; the DBAPI part after ``+`` is free. A
+   mismatch is rejected up front, because SQLAlchemy derives its dialect
+   from the URL rather than from ``--driver``, and would otherwise connect
+   successfully before failing deep inside introspection.
+
+   Equivalent config key: ``server.dsn``.
+
+   *Environment variable:* ``DB2SQL_SOURCE_DSN``
+
+   .. warning::
+
+      A DSN carries the password. Passed on the command line it is visible
+      in ``ps`` and lands in the shell history — prefer the environment
+      variable or the config file. Log output is always redacted
+      (``user:***@host``).
 
 Output
 ~~~~~~
@@ -433,6 +475,8 @@ take precedence when both are present.
      - Database user name
    * - ``DB2SQL_PASSWORD``
      - Database password
+   * - ``DB2SQL_SOURCE_DSN``
+     - Full SQLAlchemy URL for the source; replaces the five variables above
    * - ``DB2SQL_TARGET_HOST``
      - Target database hostname (used by ``db2sql migrate``)
    * - ``DB2SQL_TARGET_PORT``
@@ -443,6 +487,8 @@ take precedence when both are present.
      - Target database user (used by ``db2sql migrate``)
    * - ``DB2SQL_TARGET_PASSWORD``
      - Target database password (used by ``db2sql migrate``)
+   * - ``DB2SQL_TARGET_DSN``
+     - Full SQLAlchemy URL for the target; replaces the five variables above
    * - ``DB2SQL_CONFIG``
      - Path to a config file
    * - ``NO_COLOR``
@@ -468,7 +514,7 @@ to ``stdout``. This is the default command — see
 
    db2sql dump [--driver NAME] [--target NAME]
                [-H HOSTNAME] [-P PORT] [-d DBNAME]
-               [-u USERNAME] [-p PASSWORD] [-W]
+               [-u USERNAME] [-p PASSWORD] [-W] [--source-dsn URL]
                [-i NAME …] [-x NAME …] [-I NAME …] [-X NAME …]
                [--preserve-case | --no-preserve-case]
                [--data-format {copy,insert}] [-n N]
@@ -605,13 +651,14 @@ batched ``executemany`` for MSSQL).
 
    db2sql migrate [--driver NAME] [--target NAME]
                   [-H HOSTNAME] [-P PORT] [-d DBNAME]
-                  [-u USERNAME] [-p PASSWORD] [-W]
+                  [-u USERNAME] [-p PASSWORD] [-W] [--source-dsn URL]
                   [-i NAME …] [-x NAME …] [-I NAME …] [-X NAME …]
                   [--preserve-case | --no-preserve-case]
                   [--data-format {copy,insert}] [-n N]
                   [--target-host HOSTNAME] [--target-port PORT]
                   [--target-dbname DBNAME] [--target-user USERNAME]
                   [--target-password PASSWORD] [--target-driver NAME]
+                  [--target-dsn URL]
                   [--on-existing {fail,drop,truncate}]
                   [--transaction-mode {single,per_table}]
                   [--transaction | --no-transaction]
@@ -666,6 +713,18 @@ Target connection
    file over the command line to avoid leaking secrets in shell history.
 
    *Environment variable:* ``DB2SQL_TARGET_PASSWORD``
+
+.. option:: --target-dsn URL
+
+   Full SQLAlchemy URL for the target database — the mirror of
+   :option:`--source-dsn`, with the same semantics: it replaces every other
+   ``--target-*`` connection flag rather than merging with them, its dialect
+   must match :option:`--target`, and it should be supplied through the
+   environment rather than the command line.
+
+   Equivalent config key: ``target_server.dsn``.
+
+   *Environment variable:* ``DB2SQL_TARGET_DSN``
 
 Migration behaviour
 ^^^^^^^^^^^^^^^^^^^
@@ -839,10 +898,22 @@ Oracle
 
 Requires ``oracledb`` (``pip install "python-db2sql[oracle]"``).  Identify
 the database with **either** ``service_name`` **or** ``sid`` under
-``server.options`` — neither is exposed as a top-level CLI flag, so Oracle
-connections need a small config file.  ``server.dbname`` is used as a
+``server.options`` — neither has a dedicated CLI flag, so Oracle connections
+are usually described in a small config file.  ``server.dbname`` is used as a
 fallback SID.  Use ``server.options.owner`` to dump a single schema
 (Oracle owners are upper-cased automatically).
+
+Alternatively, :option:`--source-dsn` expresses the same thing in one
+argument and needs no file:
+
+.. code-block:: console
+
+   $ export DB2SQL_SOURCE_DSN='oracle+oracledb://admin:s3cr3t@oracle.example.com:1521/?service_name=ORCLPDB1'
+   $ db2sql dump --driver oracle -f dump.sql
+
+Note that ``options.owner`` has no DSN equivalent — it filters the export
+rather than the connection, so a config file is still required to restrict
+the dump to a single owner.
 
 Via ``service_name`` (typical for pluggable databases), filtered to one
 owner:

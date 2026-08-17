@@ -146,6 +146,16 @@ Connection parameters for the source database.
    * - ``dbname``
      - ``null``
      - Database name (or SQLite file path).
+   * - ``dsn``
+     - ``null``
+     - Full SQLAlchemy URL for the source, e.g.
+       ``postgresql+psycopg2://user:pwd@host:5432/db?sslmode=require``. It
+       **replaces** ``hostname``, ``port``, ``username``, ``password`` and
+       ``dbname`` rather than merging with them, and its dialect must match
+       ``driver``. Declaring it alongside any of those keys **in the same
+       file** is rejected as a contradiction; overriding a file's connection
+       with ``--source-dsn`` on the command line remains valid. See
+       :option:`--source-dsn`.
    * - ``options``
      - ``{}``
      - Driver-specific extra options passed as key/value pairs
@@ -184,6 +194,12 @@ override the corresponding fields here, which in turn override the
    * - ``dbname``
      - ``null``
      - Target database name.
+   * - ``dsn``
+     - ``null``
+     - Full SQLAlchemy URL for the target. Same semantics as ``server.dsn``:
+       it replaces the discrete fields above, its dialect must match
+       ``target``, and combining it with those fields in the same file is
+       rejected. See :option:`--target-dsn`.
    * - ``options``
      - ``{}``
      - Driver-specific extra options for the target connection.

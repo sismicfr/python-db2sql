@@ -27,13 +27,14 @@ _DEFAULT_CONFIG_FILES: List[str] = [
     str(Path.home() / "db2sql.yml"),
 ]
 
-_SERVER_FIELDS = {"hostname", "port", "username", "password", "dbname"}
+_SERVER_FIELDS = {"hostname", "port", "username", "password", "dbname", "dsn"}
 _TARGET_SERVER_FIELDS = {
     "target_hostname",
     "target_port",
     "target_username",
     "target_password",
     "target_dbname",
+    "target_dsn",
 }
 _MIGRATE_FIELDS = {"on_existing", "transaction_mode", "batch_size", "use_transaction"}
 _DUMP_FIELDS = {
@@ -105,9 +106,30 @@ def load_config(config_file: Optional[PathLike] = None) -> AppConfig:
     if not data:
         return AppConfig()
     try:
-        return AppConfig.model_validate(data)
+        config = AppConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigInvalidError(f"Invalid configuration file {resolved}: {exc}") from exc
+    _reject_dsn_conflicts(config, resolved)
+    return config
+
+
+def _reject_dsn_conflicts(config: AppConfig, source: str) -> None:
+    """Refuse a ``dsn`` sitting next to discrete connection keys in the same file.
+
+    A DSN replaces the connection rather than merging with it, so declaring
+    both in one file states two contradictory intents. A DSN passed on the
+    command line while the file describes a host is a different matter — that
+    is the documented precedence, and the runner only warns about it.
+    """
+    for section in ("server", "target_server"):
+        server = getattr(config, section)
+        shadowed = server.fields_shadowed_by_dsn()
+        if shadowed:
+            keys = ", ".join(f"{section}.{name}" for name in shadowed)
+            raise ConfigInvalidError(
+                f"Invalid configuration file {source}: {section}.dsn cannot be combined "
+                f"with {keys} — a DSN replaces the connection, it does not merge with it."
+            )
 
 
 def merge_cli_overrides(config: AppConfig, options: Mapping[str, Any]) -> AppConfig:

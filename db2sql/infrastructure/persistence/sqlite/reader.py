@@ -29,10 +29,13 @@ class SQLiteSourceReader:
 
     @property
     def _connection_string(self) -> str:
-        path = self._config.server.options.get("path") or self._config.server.dbname
+        server = self._config.server
+        if server.dsn:
+            return build_url(server, "sqlite", credentials=False)
+        path = server.options.get("path") or server.dbname
         if not path:
-            raise SourceReaderError("SQLite reader requires server.dbname or options.path")
-        return build_url(self._config.server, "sqlite", database=str(path), credentials=False)
+            raise SourceReaderError("SQLite reader requires server.dbname, options.path, or a DSN")
+        return build_url(server, "sqlite", database=str(path), credentials=False)
 
     def _ensure_session(self) -> Session:
         if self._session is None:

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.engine import make_url
 
-from db2sql.infrastructure.config import ServerConfig
-from db2sql.infrastructure.url import build_url, redact_url
+from db2sql.infrastructure.config import ConfigInvalidError, ServerConfig
+from db2sql.infrastructure.url import build_url, database_from_url, redact_url
 
 
 def test_build_url_full_shape() -> None:
@@ -41,6 +41,64 @@ def test_credentials_survive_a_round_trip_through_sqlalchemy(password: str) -> N
     assert parsed.host == "h"
     assert parsed.port == 5432
     assert parsed.database == "d"
+
+
+def test_dsn_replaces_every_other_field() -> None:
+    server = ServerConfig(
+        hostname="ignored",
+        port=1,
+        username="ignored",
+        password="ignored",
+        dbname="ignored",
+        dsn="postgresql+psycopg2://u:p@real:5432/db?sslmode=require",
+    )
+    url = build_url(server, "postgresql+psycopg2", database="ignored", query={"a": "b"})
+    assert url == "postgresql+psycopg2://u:p@real:5432/db?sslmode=require"
+
+
+def test_dsn_may_select_another_dbapi_for_the_same_dialect() -> None:
+    """Swapping psycopg2 for another driver is exactly the point of a DSN."""
+    server = ServerConfig(dsn="postgresql+asyncpg://u:p@h/db")
+    assert build_url(server, "postgresql+psycopg2") == "postgresql+asyncpg://u:p@h/db"
+
+
+def test_dsn_with_a_bare_dialect_is_accepted() -> None:
+    server = ServerConfig(dsn="postgresql://u:p@h/db")
+    assert build_url(server, "postgresql+psycopg2") == "postgresql://u:p@h/db"
+
+
+def test_dsn_targeting_another_dialect_is_rejected() -> None:
+    server = ServerConfig(dsn="mysql+pymysql://u:p@h/db")
+    with pytest.raises(ConfigInvalidError, match="does not match the selected driver"):
+        build_url(server, "postgresql+psycopg2")
+
+
+def test_malformed_dsn_is_rejected() -> None:
+    with pytest.raises(ConfigInvalidError, match="expected a '<dialect>://' URL"):
+        build_url(ServerConfig(dsn="not-a-url"), "postgresql+psycopg2")
+
+
+def test_fields_shadowed_by_dsn_lists_what_is_ignored() -> None:
+    server = ServerConfig(hostname="h", dbname="d", dsn="postgresql://u@h/d")
+    assert server.fields_shadowed_by_dsn() == ("hostname", "dbname")
+
+
+def test_fields_shadowed_by_dsn_is_empty_without_a_dsn() -> None:
+    assert ServerConfig(hostname="h", dbname="d").fields_shadowed_by_dsn() == ()
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("mysql+pymysql://u:p@h:3306/main", "main"),
+        ("mysql+pymysql://u:p@h/main?charset=utf8mb4", "main"),
+        ("mysql+pymysql://u:p@h/my%20db", "my db"),
+        ("mysql+pymysql://u:p@h/", None),
+        ("mysql+pymysql://u:p@h", None),
+    ],
+)
+def test_database_from_url(url: str, expected: object) -> None:
+    assert database_from_url(url) == expected
 
 
 def test_redact_url_masks_the_password() -> None:

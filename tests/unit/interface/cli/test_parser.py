@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from db2sql.infrastructure.config.errors import ConfigMissingError
+from db2sql.infrastructure.config.errors import ConfigInvalidError, ConfigMissingError
 from db2sql.interface.cli.parser import (
     AbortExecution,
     CommandLineError,
@@ -230,6 +230,129 @@ def test_root_help_hides_dump_options_but_lists_the_commands(clean_env) -> None:
     assert "--split-size" not in help_text
     for command in ("dump", "init", "validate", "migrate"):
         assert command in help_text
+
+
+def test_source_dsn_lands_in_the_server_config(clean_env) -> None:
+    dsn = "postgresql+psycopg2://u:p@h:5432/db?sslmode=require"
+    ns = build_parser().parse_args_with_config(
+        ["dump", "--driver", "postgres", "--source-dsn", dsn]
+    )
+    assert ns.config.server.dsn == dsn
+
+
+def test_source_dsn_works_on_the_implicit_dump_form(clean_env) -> None:
+    dsn = "sqlite:///app.db"
+    ns = build_parser().parse_args_with_config(["--driver", "sqlite", "--source-dsn", dsn])
+    assert ns.config.server.dsn == dsn
+
+
+def test_source_dsn_is_accepted_by_migrate_and_validate(clean_env) -> None:
+    dsn = "sqlite:///app.db"
+    for command in ("migrate", "validate"):
+        ns = build_parser().parse_args_with_config(
+            [command, "--driver", "sqlite", "--source-dsn", dsn]
+        )
+        assert ns.config.server.dsn == dsn, command
+
+
+def test_target_dsn_lands_in_the_target_server_config(clean_env) -> None:
+    dsn = "postgresql+psycopg2://u:p@target:5432/db"
+    ns = build_parser().parse_args_with_config(["migrate", "--target-dsn", dsn])
+    assert ns.config.target_server.dsn == dsn
+
+
+def test_target_dsn_is_not_offered_on_dump(clean_env) -> None:
+    """--target-dsn only makes sense for a live migration."""
+    with pytest.raises(SystemExit):
+        build_parser().parse_args_with_config(["dump", "--target-dsn", "postgresql://u@h/d"])
+
+
+def test_source_dsn_reads_its_environment_variable(clean_env) -> None:
+    clean_env.setenv("DB2SQL_SOURCE_DSN", "sqlite:///from-env.db")
+    ns = build_parser().parse_args_with_config(["dump", "--driver", "sqlite"])
+    assert ns.config.server.dsn == "sqlite:///from-env.db"
+
+
+@pytest.mark.parametrize(
+    "conflicting",
+    [
+        ["-H", "host"],
+        ["--host", "host"],
+        ["--host=host"],
+        ["-Hhost"],
+        ["-d", "db"],
+        ["-u", "user"],
+        ["-p", "pwd"],
+        ["-W"],
+        ["--ask-password"],
+    ],
+)
+def test_source_dsn_combined_with_a_connection_flag_is_rejected(clean_env, conflicting) -> None:
+    """Both on one command line is a contradiction, whatever the spelling."""
+    parser = build_parser()
+    with pytest.raises(ConfigInvalidError):
+        parser.parse_args_with_config(
+            ["dump", "--driver", "sqlite", "--source-dsn", "sqlite:///a.db"] + conflicting
+        )
+
+
+def test_source_dsn_conflict_is_detected_across_the_subcommand(clean_env) -> None:
+    parser = build_parser()
+    with pytest.raises(ConfigInvalidError):
+        parser.parse_args_with_config(
+            ["-H", "host", "dump", "--driver", "sqlite", "--source-dsn", "sqlite:///a.db"]
+        )
+
+
+def test_source_dsn_error_names_the_conflicting_flags(clean_env) -> None:
+    parser = build_parser()
+    with pytest.raises(ConfigInvalidError) as exc:
+        parser.parse_args_with_config(
+            ["dump", "--source-dsn", "sqlite:///a.db", "-H", "h", "-d", "db"]
+        )
+    assert "--source-dsn cannot be combined with -H, -d" in exc.value.message
+
+
+def test_help_wins_over_a_dsn_conflict(clean_env) -> None:
+    """Asking for help must never fail, however contradictory the rest is."""
+    parser = build_parser()
+    with pytest.raises((AbortExecution, SystemExit)):
+        parser.parse_args_with_config(["dump", "--source-dsn", "sqlite:///a.db", "-H", "h", "-h"])
+
+
+def test_target_dsn_combined_with_a_target_flag_is_rejected(clean_env) -> None:
+    parser = build_parser()
+    with pytest.raises(ConfigInvalidError):
+        parser.parse_args_with_config(
+            ["migrate", "--target-dsn", "postgresql://h/d", "--target-host", "h"]
+        )
+
+
+def test_target_dsn_does_not_clash_with_the_source_flags(clean_env) -> None:
+    """The two endpoints are independent: a target DSN says nothing about -H."""
+    ns = build_parser().parse_args_with_config(
+        ["migrate", "--driver", "sqlite", "-d", "src.db", "--target-dsn", "postgresql://h/d"]
+    )
+    assert ns.config.server.dbname == "src.db"
+    assert ns.config.target_server.dsn == "postgresql://h/d"
+
+
+def test_source_dsn_may_override_a_config_file_host(clean_env, tmp_path: Path) -> None:
+    """Cross-layer override stays legal — only same-layer conflicts are blocked."""
+    cfg = tmp_path / "db2sql.json"
+    cfg.write_text(json.dumps({"driver": "sqlite", "server": {"hostname": "from-file"}}))
+    ns = build_parser().parse_args_with_config(
+        ["dump", "-C", str(cfg), "--source-dsn", "sqlite:///a.db"]
+    )
+    assert ns.config.server.dsn == "sqlite:///a.db"
+
+
+def test_source_dsn_may_override_an_environment_host(clean_env) -> None:
+    clean_env.setenv("DB2SQL_HOST", "from-env")
+    ns = build_parser().parse_args_with_config(
+        ["dump", "--driver", "sqlite", "--source-dsn", "sqlite:///a.db"]
+    )
+    assert ns.config.server.dsn == "sqlite:///a.db"
 
 
 def test_dump_help_documents_the_options_without_leaking_suppress(clean_env, capsys) -> None:

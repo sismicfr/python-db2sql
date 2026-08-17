@@ -84,6 +84,34 @@ rows. Use it to refresh data into a pre-existing schema:
    $ db2sql dump --driver sqlite --dbname mydb.sqlite --on-existing truncate -f refresh.sql
 
 
+Connecting with a DSN
+---------------------
+
+The discrete ``-H`` / ``-P`` / ``-d`` / ``-u`` / ``-p`` flags cover the common
+case. When you need something they cannot express — a TLS mode, a charset, an
+Oracle ``service_name``, an alternative DBAPI — pass a full SQLAlchemy URL
+instead:
+
+.. code-block:: console
+
+   # prefer the environment: a DSN on the command line is visible in `ps`
+   $ export DB2SQL_SOURCE_DSN='postgresql+psycopg2://app:s3cr3t@pg.example.com:5432/mydb?sslmode=require'
+   $ db2sql dump --driver postgres -f dump.sql
+
+   # and its mirror for a live migration
+   $ export DB2SQL_TARGET_DSN='postgresql+psycopg2://svc@target.internal:5432/stage'
+   $ db2sql migrate --driver mysql -H mysql.example.com -d mydb -u app -W
+
+A DSN **replaces** the connection rather than merging with it, and the URL
+dialect must match ``--driver`` / ``--target``. Passing a DSN together with
+``-H`` / ``-d`` / … on the same command line — or declaring both in the same
+config file — is rejected as a contradiction; a DSN overriding a connection
+that came from a config file or the environment is allowed, and warns about
+what it dropped. Passwords are always redacted in log output. See the
+`CLI reference <https://python-db2sql.readthedocs.org/en/stable/cli.html>`__
+for the full semantics.
+
+
 Validating a configuration
 --------------------------
 

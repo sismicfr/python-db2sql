@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Any, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 from db2sql import const
 from db2sql.application.dto import DataFormat
 from db2sql.infrastructure.config import (
     AppConfig,
     ConfigError,
+    ConfigInvalidError,
     load_config,
     merge_cli_overrides,
 )
@@ -47,10 +48,84 @@ class CommandLineError(Exception):
         self.message = message
 
 
+_SOURCE_CONNECTION_FLAGS = (
+    "-H",
+    "--host",
+    "-P",
+    "--port",
+    "-d",
+    "--dbname",
+    "-u",
+    "--username",
+    "-p",
+    "--password",
+    "-W",
+    "--ask-password",
+)
+
+_TARGET_CONNECTION_FLAGS = (
+    "--target-host",
+    "--target-port",
+    "--target-dbname",
+    "--target-user",
+    "--target-password",
+)
+
+
+def _flags_used(argv: Sequence[str], flags: Sequence[str]) -> List[str]:
+    """Return which of ``flags`` appear in ``argv``, in declaration order.
+
+    Recognises the three spellings argparse accepts: the bare flag, the
+    ``--long=value`` form, and a short flag with its value attached
+    (``-Hhost``). An exotic spelling that slips through simply falls back to
+    the runtime warning instead of raising — better to miss a conflict than
+    to reject a valid command line.
+    """
+    used = []
+    for flag in flags:
+        is_short = len(flag) == 2 and not flag.startswith("--")
+        for token in argv:
+            attached = is_short and token.startswith(flag) and len(token) > len(flag)
+            if token == flag or token.startswith(f"{flag}=") or attached:
+                used.append(flag)
+                break
+    return used
+
+
 class MsDumpToPGArgumentParser(argparse.ArgumentParser):
     """Builds an :class:`AppConfig` from CLI args + config file + env."""
 
+    def _reject_dsn_conflicts(self, argv: Sequence[str]) -> None:
+        """Refuse a DSN and discrete connection flags on the same command line.
+
+        A DSN replaces the connection rather than merging with it, so passing
+        both expresses two contradictory intents. Only same-command-line
+        conflicts are rejected here: a DSN overriding a host that came from a
+        config file or the environment is the documented precedence at work,
+        and the runner merely warns about it.
+
+        Raises :class:`ConfigInvalidError` rather than calling
+        :meth:`argparse.ArgumentParser.error` so that a contradictory
+        connection exits with the same code as its config-file equivalent.
+        """
+        if "-h" in argv or "--help" in argv:
+            return
+        for dsn_flag, connection_flags in (
+            ("--source-dsn", _SOURCE_CONNECTION_FLAGS),
+            ("--target-dsn", _TARGET_CONNECTION_FLAGS),
+        ):
+            if not _flags_used(argv, [dsn_flag]):
+                continue
+            conflicting = _flags_used(argv, connection_flags)
+            if conflicting:
+                raise ConfigInvalidError(
+                    f"{dsn_flag} cannot be combined with {', '.join(conflicting)}: a DSN "
+                    f"replaces the connection, it does not merge with it. Pass either the "
+                    f"DSN or the individual flags."
+                )
+
     def parse_args_with_config(self, args: Optional[Sequence[str]] = None) -> argparse.Namespace:
+        self._reject_dsn_conflicts(list(args) if args is not None else sys.argv[1:])
         options = super().parse_args(args)
 
         if "help" in options and options.help:
@@ -289,6 +364,24 @@ def _add_source_options(
         action="store_true",
         default=_value(False, defaults=defaults),
         help=_text("Force password prompt.", visible=visible),
+    )
+    parser.add_argument(
+        "--source-dsn",
+        dest="dsn",
+        metavar="URL",
+        type=str,
+        default=_value(os.getenv(const.ENV_DB2SQL_SOURCE_DSN), defaults=defaults),
+        help=_text(
+            "Full SQLAlchemy URL for the source, e.g. "
+            "'postgresql+psycopg2://user:pwd@host:5432/db?sslmode=require'. "
+            "Replaces --host/--port/--dbname/--username/--password entirely "
+            "and is the only way to pass driver-specific parameters. The URL "
+            "dialect must match --driver. Prefer the environment variable: a "
+            "DSN on the command line is visible in 'ps'. "
+            f"[env var: {const.ENV_DB2SQL_SOURCE_DSN}]",
+            visible=visible,
+        ),
+        action=OnceArgument,
     )
 
 
@@ -601,6 +694,22 @@ def _add_migrate_subparser(subparsers: Any) -> None:
         type=str,
         default=os.getenv(const.ENV_DB2SQL_TARGET_PASSWORD),
         help=f"Target database password. [env var: {const.ENV_DB2SQL_TARGET_PASSWORD}]",
+        action=OnceArgument,
+    )
+    migrate_parser.add_argument(
+        "--target-dsn",
+        dest="target_dsn",
+        metavar="URL",
+        type=str,
+        default=os.getenv(const.ENV_DB2SQL_TARGET_DSN),
+        help=(
+            "Full SQLAlchemy URL for the target. Replaces every other "
+            "--target-host/--target-port/--target-dbname/--target-user/"
+            "--target-password flag and must match the --target dialect. "
+            "Prefer the environment variable: a DSN on the command line is "
+            "visible in 'ps'. "
+            f"[env var: {const.ENV_DB2SQL_TARGET_DSN}]"
+        ),
         action=OnceArgument,
     )
     migrate_parser.add_argument(
