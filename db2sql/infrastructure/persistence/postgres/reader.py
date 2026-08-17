@@ -12,6 +12,7 @@ from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.url import build_url, redact_url
 
 _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")
 
@@ -27,20 +28,14 @@ class PostgresSourceReader:
 
     def _ensure_session(self) -> Session:
         if self._session is None:
-            self._logger.info(f"set connection to {self._connection_string}")
+            self._logger.info(f"set connection to {redact_url(self._connection_string)}")
             self._engine = create_engine(self._connection_string)
             self._session = sessionmaker(bind=self._engine)()
         return self._session
 
     @property
     def _connection_string(self) -> str:
-        server = self._config.server
-        port = f":{server.port}" if server.port else ""
-        username = server.username or ""
-        password = server.password or ""
-        hostname = server.hostname or ""
-        dbname = server.dbname or ""
-        return f"postgresql+psycopg2://{username}:{password}@{hostname}{port}/{dbname}"
+        return build_url(self._config.server, "postgresql+psycopg2")
 
     def collect_metadata(self) -> Database:
         database = Database(str(self._config.server.dbname or ""))

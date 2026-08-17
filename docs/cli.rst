@@ -6,17 +6,22 @@ Synopsis
 
 .. code-block:: text
 
-   db2sql [OPTIONS] [--on-existing {fail,drop,truncate}]
-                    [--transaction | --no-transaction]
-   db2sql validate [CONFIG_FILE] [--dry-run] [--with-counts]
-   db2sql init [-o PATH] [--force]
-   db2sql migrate [--target-host HOST] [--target-port PORT] [--target-dbname DB]
+   db2sql [GLOBAL OPTIONS] COMMAND [OPTIONS]
+
+   db2sql dump [SOURCE OPTIONS | --source-dsn URL] [FILTERING OPTIONS]
+               [-f PATH] [--split-size SIZE]
+               [--on-existing {fail,drop,truncate}]
+               [--transaction | --no-transaction]
+   db2sql migrate [SOURCE OPTIONS | --source-dsn URL] [FILTERING OPTIONS]
+                  [--target-host HOST] [--target-port PORT] [--target-dbname DB]
                   [--target-user USER] [--target-password PWD]
-                  [--target-driver NAME]
+                  [--target-driver NAME] [--target-dsn URL]
                   [--on-existing {fail,drop,truncate}]
                   [--transaction-mode {single,per_table}]
                   [--transaction | --no-transaction]
                   [--batch-size N]
+   db2sql validate [CONFIG_FILE] [--dry-run] [--with-counts]
+   db2sql init [-o PATH] [--force]
 
 Description
 -----------
@@ -24,13 +29,30 @@ Description
 ``db2sql`` reads the structure and data of a source database and either:
 
 * writes a SQL dump in the chosen target dialect (PostgreSQL or Microsoft
-  SQL Server) to a file or ``stdout`` — the default behaviour, and
-* applies the same DDL and rows directly to a live target database when
-  invoked via the ``migrate`` subcommand — see :ref:`cli-migrate`.
+  SQL Server) to a file or ``stdout`` — the ``dump`` command, see
+  :ref:`cli-dump`, and
+* applies the same DDL and rows directly to a live target database — the
+  ``migrate`` command, see :ref:`cli-migrate`.
 
 The DDL produced is identical in both modes: a single ``SqlEmitter`` per
 target dialect is the source of truth, regardless of whether the SQL ends up
 in a file or is executed live.
+
+.. _cli-default-command:
+
+.. note::
+
+   ``dump`` is the **default command**: running ``db2sql`` with dump options
+   but no ``COMMAND`` is a shorthand for ``db2sql dump``. Both forms are
+   supported and produce identical output — the explicit form is the
+   documented one, and the only one with a ``--help`` page of its own::
+
+      $ db2sql --driver sqlite -d myapp.sqlite -f dump.sql        # shorthand
+      $ db2sql dump --driver sqlite -d myapp.sqlite -f dump.sql   # explicit
+
+   Source and filtering options may also be given *before* the command
+   (``db2sql --driver sqlite dump -f out.sql``); when the same flag appears on
+   both sides, the one after the command wins.
 
 Connection options, filtering rules, and output settings can be supplied via
 the :doc:`configuration` file, environment variables, or CLI flags.
@@ -43,6 +65,23 @@ series of questions and produces a ready-to-use configuration file — see
 
 Options
 -------
+
+Which command accepts what:
+
+* **Connection** and **Filtering** options describe the *source* and *what is
+  read from it*. They are accepted by ``dump``, ``migrate`` and ``validate``
+  alike — the three commands feed the same reader and the same filtering
+  rules. ``migrate`` adds its own ``--target-*`` flags for the destination
+  connection.
+* **General** options are accepted by every command, before or after the
+  command name.
+* Under **Output**, :option:`-f`, :option:`--split-size`,
+  :option:`--on-existing` and :option:`--transaction` are **dump-only** —
+  they describe the SQL file. ``migrate`` declares its own ``--on-existing``
+  and ``--transaction`` with migration semantics, see :ref:`cli-migrate`.
+  The remaining three (:option:`--data-format`, :option:`--preserve-case`,
+  :option:`-n`) shape the emitted DDL and rows, so they apply to ``migrate``
+  too.
 
 Connection
 ~~~~~~~~~~
@@ -112,6 +151,48 @@ Connection
 
    Prompt for the database password interactively instead of reading it from
    :option:`-p` or the environment variable.
+
+.. option:: --source-dsn URL
+
+   Full SQLAlchemy URL for the source database, e.g.
+   ``postgresql+psycopg2://user:pwd@host:5432/db?sslmode=require``.
+
+   This is the escape hatch for anything the discrete flags cannot express:
+   driver-specific query parameters (``sslmode``, ``charset``,
+   ``TrustServerCertificate``, ``ApplicationIntent``…), an alternative DBAPI
+   for the same dialect (``postgresql+asyncpg://``), or the Oracle
+   ``service_name`` / ``sid`` selection that otherwise requires a config file.
+
+   **It replaces the connection, it does not merge with it.** Because the two
+   cannot be reconciled, ``db2sql`` distinguishes a contradiction from an
+   override:
+
+   * **Rejected** — a DSN and any of :option:`-H`, :option:`-P`,
+     :option:`-d`, :option:`-u`, :option:`-p`, :option:`-W` on the *same
+     command line*, or ``dsn`` next to those keys in the *same config file*.
+     Both spellings state two different connections at once, which is a
+     mistake rather than an intent. The command fails before connecting.
+   * **Allowed, with a warning** — a DSN on the command line overriding a
+     ``server:`` section from a config file, or ``DB2SQL_HOST`` and friends
+     from the environment. This is the ordinary precedence order at work; the
+     warning lists exactly which settings were dropped.
+
+   The dialect of the URL must match the dialect the selected
+   :option:`--driver` expects; the DBAPI part after ``+`` is free. A
+   mismatch is rejected up front, because SQLAlchemy derives its dialect
+   from the URL rather than from ``--driver``, and would otherwise connect
+   successfully before failing deep inside introspection.
+
+   Equivalent config key: ``server.dsn``.
+
+   *Environment variable:* ``DB2SQL_SOURCE_DSN``
+
+   .. warning::
+
+      A DSN carries the password. Passed on the command line it is visible
+      in ``ps`` and lands in the shell history — prefer the environment
+      variable or the config file. Log output is always redacted
+      (``user:***@host``).
 
 Output
 ~~~~~~
@@ -315,7 +396,7 @@ The ``init`` subcommand
 
 ``db2sql init`` is an interactive wizard that asks a few questions about the
 source database, the target dialect, and the dump options, then prints (or
-writes) a configuration file ready to be passed to ``db2sql -C``.
+writes) a configuration file ready to be passed to ``db2sql dump -C``.
 
 .. code-block:: text
 
@@ -336,6 +417,14 @@ must match before it is written.
 
 The generated file only contains the values you set — defaults are left out
 to keep the file short and focused.
+
+.. note::
+
+   The wizard only asks for the discrete connection fields; it never
+   produces a ``server.dsn``. If you need a DSN, add it to the generated
+   file by hand and remove the ``hostname`` / ``port`` / ``dbname`` /
+   ``username`` / ``password`` keys it replaces — keeping both in the same
+   file is rejected. See :option:`--source-dsn`.
 
 .. option:: -o PATH, --output PATH
 
@@ -366,7 +455,7 @@ Example
    …
    Wrote configuration to db2sql.yml
 
-   $ db2sql -C db2sql.yml -f dump.sql
+   $ db2sql dump -C db2sql.yml -f dump.sql
 
 Environment variables
 ---------------------
@@ -394,6 +483,8 @@ take precedence when both are present.
      - Database user name
    * - ``DB2SQL_PASSWORD``
      - Database password
+   * - ``DB2SQL_SOURCE_DSN``
+     - Full SQLAlchemy URL for the source; replaces the five variables above
    * - ``DB2SQL_TARGET_HOST``
      - Target database hostname (used by ``db2sql migrate``)
    * - ``DB2SQL_TARGET_PORT``
@@ -404,6 +495,8 @@ take precedence when both are present.
      - Target database user (used by ``db2sql migrate``)
    * - ``DB2SQL_TARGET_PASSWORD``
      - Target database password (used by ``db2sql migrate``)
+   * - ``DB2SQL_TARGET_DSN``
+     - Full SQLAlchemy URL for the target; replaces the five variables above
    * - ``DB2SQL_CONFIG``
      - Path to a config file
    * - ``NO_COLOR``
@@ -415,6 +508,61 @@ take precedence when both are present.
 
 Subcommands
 -----------
+
+.. _cli-dump:
+
+``db2sql dump``
+~~~~~~~~~~~~~~~
+
+Write the source database as a SQL script, either to a file (:option:`-f`) or
+to ``stdout``. This is the default command — see
+:ref:`the shorthand form <cli-default-command>` described above.
+
+.. code-block:: text
+
+   db2sql dump [--driver NAME] [--target NAME]
+               [-H HOSTNAME] [-P PORT] [-d DBNAME]
+               [-u USERNAME] [-p PASSWORD] [-W] [--source-dsn URL]
+               [-i NAME …] [-x NAME …] [-I NAME …] [-X NAME …]
+               [--preserve-case | --no-preserve-case]
+               [--data-format {copy,insert}] [-n N]
+               [-f PATH] [--split-size SIZE]
+               [--on-existing {fail,drop,truncate}]
+               [--transaction | --no-transaction]
+
+Every flag is documented above: the source connection under `Connection`_,
+the include/exclude rules under `Filtering`_, and the file-level settings
+under `Output`_.
+
+Exit codes:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 85
+
+   * - Code
+     - Meaning
+   * - ``0``
+     - The dump completed and was fully written.
+   * - ``5``
+     - Configuration error, or an unknown ``--driver`` / ``--target``.
+   * - ``1``
+     - The source read failed (bad credentials, missing tables, permission
+       errors…), or the output could not be written.
+
+Examples:
+
+.. code-block:: console
+
+   # SQLite source → PostgreSQL SQL file
+   $ db2sql dump --driver sqlite -d myapp.sqlite -f dump.sql
+
+   # stream to stdout and load straight into a running Postgres instance
+   $ db2sql dump --driver mysql -H mysql.example.com -d mydb -u app -p s3cr3t \
+       | psql -h pg.example.com -U app -d mydb_imported
+
+   # replayable dump, split into 100 MB parts
+   $ db2sql dump -C db2sql.yml --on-existing drop -f dump.sql --split-size 100M
 
 ``db2sql validate``
 ~~~~~~~~~~~~~~~~~~~
@@ -502,25 +650,33 @@ Examples:
 
 Apply the source database directly to a live target database, without going
 through an intermediate ``.sql`` file. The DDL emitted to the target is
-byte-identical to what ``db2sql > dump.sql && psql -f dump.sql`` would have
+byte-identical to what ``db2sql dump -f dump.sql && psql -f dump.sql`` would have
 produced — only the row-data transport differs (the migrate path uses the
 target's native bulk-load primitive: ``COPY FROM STDIN`` for PostgreSQL,
 batched ``executemany`` for MSSQL).
 
 .. code-block:: text
 
-   db2sql migrate [--target-host HOSTNAME] [--target-port PORT]
+   db2sql migrate [--driver NAME] [--target NAME]
+                  [-H HOSTNAME] [-P PORT] [-d DBNAME]
+                  [-u USERNAME] [-p PASSWORD] [-W] [--source-dsn URL]
+                  [-i NAME …] [-x NAME …] [-I NAME …] [-X NAME …]
+                  [--preserve-case | --no-preserve-case]
+                  [--data-format {copy,insert}] [-n N]
+                  [--target-host HOSTNAME] [--target-port PORT]
                   [--target-dbname DBNAME] [--target-user USERNAME]
                   [--target-password PASSWORD] [--target-driver NAME]
+                  [--target-dsn URL]
                   [--on-existing {fail,drop,truncate}]
                   [--transaction-mode {single,per_table}]
                   [--transaction | --no-transaction]
                   [--batch-size N]
 
-The source is configured exactly like for a file dump (top-level
+The source is configured exactly like for a file dump (the same
 ``--driver`` / ``-H`` / ``-P`` / ``-d`` / ``-u`` / ``-p`` flags, the
 ``server:`` section of the config file, or the ``DB2SQL_*`` environment
-variables). The target connection is configured via the ``--target-*``
+variables). Those flags are accepted either before or after the ``migrate``
+keyword. The target connection is configured via the ``--target-*``
 flags below, the ``target_server:`` section of the config file, or the
 ``DB2SQL_TARGET_*`` environment variables.
 
@@ -565,6 +721,18 @@ Target connection
    file over the command line to avoid leaking secrets in shell history.
 
    *Environment variable:* ``DB2SQL_TARGET_PASSWORD``
+
+.. option:: --target-dsn URL
+
+   Full SQLAlchemy URL for the target database — the mirror of
+   :option:`--source-dsn`, with the same semantics: it replaces every other
+   ``--target-*`` connection flag rather than merging with them, its dialect
+   must match :option:`--target`, and it should be supplied through the
+   environment rather than the command line.
+
+   Equivalent config key: ``target_server.dsn``.
+
+   *Environment variable:* ``DB2SQL_TARGET_DSN``
 
 Migration behaviour
 ^^^^^^^^^^^^^^^^^^^
@@ -623,19 +791,19 @@ Examples:
 .. code-block:: console
 
    # SQLite → live Postgres
-   $ db2sql --driver sqlite --dbname mydb.sqlite migrate \
+   $ db2sql migrate --driver sqlite --dbname mydb.sqlite \
        --target-host localhost --target-port 5432 \
        --target-dbname mytarget --target-user postgres --target-password s3cr3t
 
    # MSSQL source → live MSSQL target (different instance), via a config file
-   $ db2sql -C migrate.yml migrate
+   $ db2sql migrate -C migrate.yml
 
    # Use environment variables for the target credentials (recommended)
    $ export DB2SQL_TARGET_HOST=db.internal \
             DB2SQL_TARGET_DBNAME=stage \
             DB2SQL_TARGET_USER=svc_migrate \
             DB2SQL_TARGET_PASSWORD=$(vault read -field=password kv/db)
-   $ db2sql --driver mssql -H prod-mssql -d sales -u readonly -p $SOURCE_PWD migrate
+   $ db2sql migrate --driver mssql -H prod-mssql -d sales -u readonly -p $SOURCE_PWD
 
 Examples
 --------
@@ -658,7 +826,7 @@ with ``server.options.schema``).
 
 .. code-block:: console
 
-   $ db2sql --driver sqlite --dbname ./myapp.sqlite -f dump.sql
+   $ db2sql dump --driver sqlite --dbname ./myapp.sqlite -f dump.sql
 
 For a custom logical schema name, drop a config file alongside the dump
 and reference it with :option:`-C`:
@@ -674,7 +842,7 @@ and reference it with :option:`-C`:
 
 .. code-block:: console
 
-   $ db2sql -C db2sql.yml -f dump.sql
+   $ db2sql dump -C db2sql.yml -f dump.sql
 
 MySQL
 ^^^^^
@@ -684,14 +852,14 @@ is ``3306``.
 
 .. code-block:: console
 
-   $ db2sql --driver mysql \
+   $ db2sql dump --driver mysql \
        -H mysql.example.com -P 3306 \
        -u app -W \
        -d mydb \
        -f dump.sql
 
    # piping straight into a target Postgres instance via psql
-   $ db2sql --driver mysql -H mysql.example.com -d mydb -u app -p s3cr3t \
+   $ db2sql dump --driver mysql -H mysql.example.com -d mydb -u app -p s3cr3t \
        | psql "host=pg.example.com dbname=mydb user=app"
 
 Microsoft SQL Server (as a source)
@@ -703,7 +871,7 @@ convention ``public``.
 
 .. code-block:: console
 
-   $ db2sql --driver mssql \
+   $ db2sql dump --driver mssql \
        -H sqlserver.example.com -P 1433 \
        -u sa -W \
        -d mydb \
@@ -715,7 +883,7 @@ convention ``public``.
    $ export DB2SQL_DBNAME=mydb
    $ export DB2SQL_USER=sa
    $ export DB2SQL_PASSWORD=secret
-   $ db2sql -f dump.sql
+   $ db2sql dump -f dump.sql
 
 PostgreSQL (as a source)
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -725,7 +893,7 @@ Default port is ``5432``.
 
 .. code-block:: console
 
-   $ db2sql --driver postgres \
+   $ db2sql dump --driver postgres \
        -H pg.example.com -P 5432 \
        -u app -p s3cr3t \
        -d mydb \
@@ -738,10 +906,22 @@ Oracle
 
 Requires ``oracledb`` (``pip install "python-db2sql[oracle]"``).  Identify
 the database with **either** ``service_name`` **or** ``sid`` under
-``server.options`` — neither is exposed as a top-level CLI flag, so Oracle
-connections need a small config file.  ``server.dbname`` is used as a
+``server.options`` — neither has a dedicated CLI flag, so Oracle connections
+are usually described in a small config file.  ``server.dbname`` is used as a
 fallback SID.  Use ``server.options.owner`` to dump a single schema
 (Oracle owners are upper-cased automatically).
+
+Alternatively, :option:`--source-dsn` expresses the same thing in one
+argument and needs no file:
+
+.. code-block:: console
+
+   $ export DB2SQL_SOURCE_DSN='oracle+oracledb://admin:s3cr3t@oracle.example.com:1521/?service_name=ORCLPDB1'
+   $ db2sql dump --driver oracle -f dump.sql
+
+Note that ``options.owner`` has no DSN equivalent — it filters the export
+rather than the connection, so a config file is still required to restrict
+the dump to a single owner.
 
 Via ``service_name`` (typical for pluggable databases), filtered to one
 owner:
@@ -761,7 +941,7 @@ owner:
 
 .. code-block:: console
 
-   $ db2sql -C oracle-hr.yml -f hr_dump.sql
+   $ db2sql dump -C oracle-hr.yml -f hr_dump.sql
 
 Via ``sid``, dumping every non-system schema:
 
@@ -779,7 +959,7 @@ Via ``sid``, dumping every non-system schema:
 
 .. code-block:: console
 
-   $ db2sql -C oracle-all.yml -f full_dump.sql
+   $ db2sql dump -C oracle-all.yml -f full_dump.sql
 
 By target emitter
 ~~~~~~~~~~~~~~~~~
@@ -795,10 +975,10 @@ unless ``--data-format insert`` is requested.
 .. code-block:: console
 
    # explicit (postgres is the default — both forms are equivalent)
-   $ db2sql --driver sqlite --target postgres -d myapp.sqlite -f dump.sql
+   $ db2sql dump --driver sqlite --target postgres -d myapp.sqlite -f dump.sql
 
    # load straight into a running Postgres instance
-   $ db2sql --driver mssql -H sqlserver.example.com -d mydb -u sa -p s3cr3t \
+   $ db2sql dump --driver mssql -H sqlserver.example.com -d mydb -u sa -p s3cr3t \
        | psql -h pg.example.com -U app -d mydb_imported
 
 Microsoft SQL Server output
@@ -818,15 +998,15 @@ columns, and emits schemas via
 .. code-block:: console
 
    # SQLite source → MSSQL output
-   $ db2sql --driver sqlite --target mssql -d myapp.sqlite -f dump.sql
+   $ db2sql dump --driver sqlite --target mssql -d myapp.sqlite -f dump.sql
 
    # MySQL source → MSSQL output, piped into sqlcmd
-   $ db2sql --driver mysql -H mysql.example.com -d mydb -u app -p s3cr3t \
+   $ db2sql dump --driver mysql -H mysql.example.com -d mydb -u app -p s3cr3t \
        --target mssql \
        | sqlcmd -S sqlserver.example.com -d mydb_imported -U sa -P s3cr3t
 
    # Postgres source → MSSQL output, restricted to two schemas
-   $ db2sql --driver postgres -H pg.example.com -d mydb -u app -W \
+   $ db2sql dump --driver postgres -H pg.example.com -d mydb -u app -W \
        --target mssql \
        -i public -i audit \
        -f mssql_dump.sql
@@ -838,7 +1018,7 @@ Dump only two schemas, using INSERT statements:
 
 .. code-block:: console
 
-   $ db2sql --driver postgres -H localhost -d mydb \
+   $ db2sql dump --driver postgres -H localhost -d mydb \
        -i public -i audit \
        --data-format insert \
        -f dump.sql
@@ -847,18 +1027,18 @@ Produce a 100-row sample for every table (useful for development):
 
 .. code-block:: console
 
-   $ db2sql --driver mysql -H localhost -d mydb -n 100 -f sample.sql
+   $ db2sql dump --driver mysql -H localhost -d mydb -n 100 -f sample.sql
 
 Use a config file explicitly:
 
 .. code-block:: console
 
-   $ db2sql -C /etc/db2sql/production.yml -f dump.sql
+   $ db2sql dump -C /etc/db2sql/production.yml -f dump.sql
 
 Exclude a few tables from an otherwise complete MSSQL dump:
 
 .. code-block:: console
 
-   $ db2sql --driver mssql -H sqlserver.example.com -d mydb -u sa -W \
+   $ db2sql dump --driver mssql -H sqlserver.example.com -d mydb -u sa -W \
        -X audit_log -X temp_data \
        -f dump.sql
