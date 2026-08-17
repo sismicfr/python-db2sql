@@ -78,3 +78,40 @@ def test_cli_target_mssql_end_to_end(sample_db: Path, tmp_path: Path, monkeypatc
     # MSSQL output must not contain Postgres-only constructs
     assert "COPY " not in contents
     assert "serial" not in contents
+
+
+def test_cli_explicit_dump_command_matches_implicit_form(
+    sample_db: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """``db2sql dump ...`` must produce exactly what the bare form produces."""
+    monkeypatch.setattr(sys, "argv", ["db2sql"])
+    implicit_file = tmp_path / "implicit.sql"
+    explicit_file = tmp_path / "explicit.sql"
+
+    common = ["--driver", "sqlite", "-d", str(sample_db), "--preserve-case", "-f"]
+    assert Cli().run(common + [str(implicit_file)]) == 0
+    assert Cli().run(["dump"] + common + [str(explicit_file)]) == 0
+
+    assert explicit_file.read_text() == implicit_file.read_text()
+
+
+def test_cli_dump_command_accepts_options_before_and_after_the_verb(
+    sample_db: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """Flags may sit on either side of ``dump`` — the root aliases still parse."""
+    monkeypatch.setattr(sys, "argv", ["db2sql"])
+    output_file = tmp_path / "dump.sql"
+    rc = Cli().run(
+        [
+            "--driver",
+            "sqlite",
+            "dump",
+            "-d",
+            str(sample_db),
+            "--preserve-case",
+            "-f",
+            str(output_file),
+        ]
+    )
+    assert rc == 0
+    assert 'COPY "public"."book"' in output_file.read_text()

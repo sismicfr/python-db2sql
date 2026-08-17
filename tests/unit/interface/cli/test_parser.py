@@ -108,3 +108,135 @@ def test_migrate_on_existing_truncate_still_accepted(monkeypatch) -> None:
     parser = build_parser()
     ns = parser.parse_args_with_config(["migrate", "--on-existing", "truncate"])
     assert ns.config.migrate.on_existing == "truncate"
+
+
+@pytest.fixture()
+def clean_env(monkeypatch, tmp_path: Path):
+    """No config file and no env-var defaults leaking into the parsed options."""
+    for name in (
+        "DB2SQL_CONFIG",
+        "DB2SQL_DRIVER",
+        "DB2SQL_TARGET",
+        "DB2SQL_HOST",
+        "DB2SQL_PORT",
+        "DB2SQL_DBNAME",
+        "DB2SQL_USER",
+        "DB2SQL_PASSWORD",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    # Avoid picking up a ./db2sql.yml from the working directory.
+    monkeypatch.chdir(tmp_path)
+    return monkeypatch
+
+
+_DUMP_ARGS = [
+    "--driver",
+    "sqlite",
+    "-d",
+    "my.db",
+    "-f",
+    "out.sql",
+    "--on-existing",
+    "drop",
+    "--no-transaction",
+    "-I",
+    "book",
+    "-n",
+    "5",
+    "--data-format",
+    "insert",
+    "--preserve-case",
+]
+
+
+def test_dump_subcommand_is_registered(clean_env) -> None:
+    ns = build_parser().parse_args_with_config(["dump", "--driver", "sqlite"])
+    assert ns.command == "dump"
+
+
+def test_bare_invocation_has_no_command(clean_env) -> None:
+    """The implicit form stays supported and is reported as 'no subcommand'."""
+    ns = build_parser().parse_args_with_config(["--driver", "sqlite"])
+    assert ns.command is None
+
+
+def test_explicit_dump_and_implicit_form_build_the_same_config(clean_env) -> None:
+    implicit = build_parser().parse_args_with_config(list(_DUMP_ARGS)).config
+    explicit = build_parser().parse_args_with_config(["dump"] + _DUMP_ARGS).config
+    assert explicit == implicit
+
+
+def test_dump_options_may_straddle_the_subcommand(clean_env) -> None:
+    """Options before the verb are root aliases; options after win on conflict."""
+    ns = build_parser().parse_args_with_config(
+        ["--driver", "sqlite", "dump", "-d", "my.db", "-f", "out.sql"]
+    )
+    assert ns.config.driver == "sqlite"
+    assert ns.config.server.dbname == "my.db"
+    assert ns.config.output_file == "out.sql"
+
+
+def test_dump_subcommand_defaults_do_not_clobber_root_values(clean_env) -> None:
+    """The SUPPRESS defaults keep pre-verb values alive across the sub-namespace."""
+    ns = build_parser().parse_args_with_config(["-Vdebug", "--driver", "sqlite", "dump"])
+    assert ns.verbosity == "debug"
+    assert ns.config.driver == "sqlite"
+
+
+def test_global_options_are_accepted_after_the_subcommand(clean_env, tmp_path: Path) -> None:
+    log_file = tmp_path / "db2sql.log"
+    ns = build_parser().parse_args_with_config(["dump", "-Vdebug", "-L", str(log_file)])
+    assert ns.verbosity == "debug"
+    assert ns.log_file == str(log_file)
+
+
+def test_source_options_are_accepted_after_migrate(clean_env) -> None:
+    before = build_parser().parse_args_with_config(
+        ["--driver", "sqlite", "-d", "my.db", "migrate", "--target-host", "h"]
+    )
+    after = build_parser().parse_args_with_config(
+        ["migrate", "--driver", "sqlite", "-d", "my.db", "--target-host", "h"]
+    )
+    assert after.config == before.config
+
+
+def test_source_options_are_accepted_after_validate(clean_env) -> None:
+    ns = build_parser().parse_args_with_config(["validate", "--driver", "sqlite", "--dry-run"])
+    assert ns.command == "validate"
+    assert ns.config.driver == "sqlite"
+    assert ns.dry_run is True
+
+
+def test_a_dbname_that_looks_like_a_command_is_not_a_subcommand(clean_env) -> None:
+    ns = build_parser().parse_args_with_config(["--driver", "sqlite", "-d", "migrate"])
+    assert ns.command is None
+    assert ns.config.server.dbname == "migrate"
+
+
+def test_once_argument_still_rejects_duplicates_after_the_subcommand(clean_env) -> None:
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args_with_config(["dump", "--driver", "sqlite", "--driver", "mysql"])
+
+
+def test_dump_on_existing_drop_via_explicit_subcommand(clean_env) -> None:
+    ns = build_parser().parse_args_with_config(["dump", "--on-existing", "drop"])
+    assert ns.config.dump.on_existing == "drop"
+
+
+def test_root_help_hides_dump_options_but_lists_the_commands(clean_env) -> None:
+    help_text = build_parser().format_help()
+    assert "--driver" not in help_text
+    assert "--split-size" not in help_text
+    for command in ("dump", "init", "validate", "migrate"):
+        assert command in help_text
+
+
+def test_dump_help_documents_the_options_without_leaking_suppress(clean_env, capsys) -> None:
+    """A SUPPRESS default must not surface as '(default: ==SUPPRESS==)'."""
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["dump", "--help"])
+    help_text = capsys.readouterr().out
+    assert "--driver" in help_text
+    assert "--split-size" in help_text
+    assert "SUPPRESS" not in help_text

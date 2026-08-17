@@ -92,6 +92,8 @@ class Cli:
                 self._execute_migrate(options.config, target_driver)
                 return SUCCESS
 
+            # Either an explicit COMMAND_DUMP or no subcommand at all: dump is
+            # the default command, so both land here.
             self._execute(options.config)
         except Exception as exc:
             if not isinstance(exc, AbortExecution):
