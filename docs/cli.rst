@@ -396,7 +396,7 @@ The ``init`` subcommand
 
 ``db2sql init`` is an interactive wizard that asks a few questions about the
 source database, the target dialect, and the dump options, then prints (or
-writes) a configuration file ready to be passed to ``db2sql -C``.
+writes) a configuration file ready to be passed to ``db2sql dump -C``.
 
 .. code-block:: text
 
@@ -417,6 +417,14 @@ must match before it is written.
 
 The generated file only contains the values you set — defaults are left out
 to keep the file short and focused.
+
+.. note::
+
+   The wizard only asks for the discrete connection fields; it never
+   produces a ``server.dsn``. If you need a DSN, add it to the generated
+   file by hand and remove the ``hostname`` / ``port`` / ``dbname`` /
+   ``username`` / ``password`` keys it replaces — keeping both in the same
+   file is rejected. See :option:`--source-dsn`.
 
 .. option:: -o PATH, --output PATH
 

@@ -491,7 +491,7 @@ Recipes
 
 Each recipe below is a complete, copy-pasteable config file.  Drop it as
 ``db2sql.yml`` in the current directory (or pass it with ``-C path.yml``)
-and run ``db2sql -f dump.sql``.
+and run ``db2sql dump -f dump.sql``.
 
 SQLite → Postgres
 ~~~~~~~~~~~~~~~~~

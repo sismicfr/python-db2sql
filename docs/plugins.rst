@@ -28,8 +28,8 @@ The name you register becomes a usable value of ``driver:`` (readers) or
 :option:`--driver` / :option:`--target` on the CLI.
 
 A target dialect can ship either an emitter, a writer, or both. The built-in
-``postgres`` and ``mssql`` targets ship both, so ``db2sql --target postgres``
-(dump) and ``db2sql --target postgres migrate`` use the matched pair.
+``postgres`` and ``mssql`` targets ship both, so ``db2sql dump --target postgres``
+and ``db2sql migrate --target postgres`` use the matched pair.
 
 .. tip::
 
