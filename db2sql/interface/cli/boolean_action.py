@@ -16,8 +16,13 @@ class BooleanAction(argparse.Action):
             if option_string.startswith("--"):
                 _option_strings.append("--no-" + option_string[2:])
 
-        if kwargs.get("help") is not None and kwargs.get("default") is not None:
-            kwargs["help"] += f" (default: {kwargs['default']})"
+        default = kwargs.get("default")
+        if (
+            kwargs.get("help") is not None
+            and default is not None
+            and default is not argparse.SUPPRESS
+        ):
+            kwargs["help"] += f" (default: {default})"
 
         super().__init__(option_strings=_option_strings, dest=dest, nargs=0, **kwargs)
 

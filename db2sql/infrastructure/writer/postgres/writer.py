@@ -20,6 +20,7 @@ from sqlalchemy.engine import Connection, Engine
 from db2sql.application.ports import Logger
 from db2sql.domain.model import Table
 from db2sql.infrastructure.config import AppConfig
+from db2sql.infrastructure.url import build_url, redact_url
 from db2sql.infrastructure.writer.errors import (
     TargetWriterConnectionError,
     TargetWriterExecutionError,
@@ -126,22 +127,11 @@ class PostgresTargetWriter:
 
     @property
     def _connection_string(self) -> str:
-        server = self._config.target_server
-        port = f":{server.port}" if server.port else ""
-        username = server.username or ""
-        password = server.password or ""
-        hostname = server.hostname or ""
-        dbname = server.dbname or ""
-        return f"postgresql+psycopg2://{username}:{password}@{hostname}{port}/{dbname}"
+        return build_url(self._config.target_server, "postgresql+psycopg2")
 
     @property
     def _connection_string_redacted(self) -> str:
-        server = self._config.target_server
-        port = f":{server.port}" if server.port else ""
-        username = server.username or ""
-        hostname = server.hostname or ""
-        dbname = server.dbname or ""
-        return f"postgresql+psycopg2://{username}@{hostname}{port}/{dbname}"
+        return redact_url(self._connection_string)
 
     @staticmethod
     def _quote_ident(name: str) -> str:

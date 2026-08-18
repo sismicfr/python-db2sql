@@ -21,7 +21,7 @@ csv = "csv_producer:build_reader"
 ## Run
 
 ```bash
-db2sql -c db2sql.yml
+db2sql dump -C db2sql.yml
 ```
 
 `db2sql.yml` points the reader at `./sample_data`, which contains two CSV
