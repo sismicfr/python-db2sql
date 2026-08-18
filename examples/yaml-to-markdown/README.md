@@ -29,7 +29,7 @@ emitter.
 
 ```bash
 mkdir -p docs
-db2sql -c db2sql.yml
+db2sql dump -C db2sql.yml
 cat docs/schema.md
 ```
 

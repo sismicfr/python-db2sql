@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import io
 from pathlib import Path
 from typing import Any, Iterator, Tuple
@@ -48,9 +49,7 @@ class _SilentReader:
         db.add_schema(public)
         return db
 
-    def iter_rows(
-        self, schema: str, table: Table, limit: int = -1
-    ) -> Iterator[Tuple[Any, ...]]:
+    def iter_rows(self, schema: str, table: Table, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
         yield (1,)
 
 
@@ -211,3 +210,58 @@ def test_runner_signal_handlers_can_be_invoked(monkeypatch) -> None:
     with pytest.raises(SystemExit) as exc:
         sigterm_handler(_signal.SIGTERM, None)
     assert exc.value.code == 4
+
+
+def test_cli_warns_when_a_dsn_overrides_a_host_from_the_config_file(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """Overriding a file across layers is legal — but must not happen silently."""
+    monkeypatch.delenv("DB2SQL_CONFIG", raising=False)
+    cfg = tmp_path / "db2sql.json"
+    cfg.write_text(json.dumps({"server": {"hostname": "from-file", "dbname": "from-file"}}))
+    output = tmp_path / "out.sql"
+
+    rc = Cli().run(
+        [
+            "--driver",
+            "silent-reader",
+            "-C",
+            str(cfg),
+            "--source-dsn",
+            "silent-reader://host/db",
+            "-f",
+            str(output),
+        ]
+    )
+
+    assert rc == SUCCESS
+    captured = capsys.readouterr().out
+    assert "--source-dsn is set" in captured
+    assert "hostname" in captured and "dbname" in captured
+
+
+def test_cli_rejects_a_dsn_combined_with_flags_on_the_same_command_line(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Same-layer contradiction is a mistake, not an override: fail loudly."""
+    monkeypatch.delenv("DB2SQL_CONFIG", raising=False)
+    with pytest.raises(ConfigError):
+        Cli().run(
+            [
+                "--driver",
+                "silent-reader",
+                "--source-dsn",
+                "silent-reader://host/db",
+                "-H",
+                "conflicting",
+                "-f",
+                str(tmp_path / "never.sql"),
+            ]
+        )
+
+
+def test_cli_does_not_warn_without_a_dsn(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.delenv("DB2SQL_CONFIG", raising=False)
+    output = tmp_path / "out.sql"
+    assert Cli().run(["--driver", "silent-reader", "-d", "db", "-f", str(output)]) == SUCCESS
+    assert "--source-dsn is set" not in capsys.readouterr().out
