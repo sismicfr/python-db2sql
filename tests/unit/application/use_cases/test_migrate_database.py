@@ -211,6 +211,52 @@ def test_migrate_routes_data_to_bulk_load_not_emitter() -> None:
     assert writer.bulk_loads == [("public", "author", 1), ("public", "book", 1)]
 
 
+def test_migrate_bulk_loads_into_the_mapped_target_schema() -> None:
+    # The DDL is emitted against the mapped schema, so the rows must follow it
+    # there rather than into a source-named schema that does not exist.
+    db = _build_database()
+    writer = FakeWriter()
+
+    use_case = MigrateDatabaseUseCase(
+        reader=FakeReader(db),
+        emitter=RecordingEmitter(),
+        sink=FakeSink(),
+        writer=writer,
+        logger=FakeLogger(),
+        request=MigrateRequest(
+            options=DumpOptions(mapping_schemas={"public": "renamed"}),
+            filter_rules=FilterRules(),
+            on_existing=OnExisting.FAIL,
+            transaction_mode=TransactionMode.SINGLE,
+        ),
+    )
+    use_case.execute()
+
+    assert writer.bulk_loads == [("renamed", "author", 1), ("renamed", "book", 1)]
+
+
+def test_migrate_bulk_loads_into_the_wildcard_target_schema() -> None:
+    db = _build_database()
+    writer = FakeWriter()
+
+    use_case = MigrateDatabaseUseCase(
+        reader=FakeReader(db),
+        emitter=RecordingEmitter(),
+        sink=FakeSink(),
+        writer=writer,
+        logger=FakeLogger(),
+        request=MigrateRequest(
+            options=DumpOptions(mapping_schemas={"*": "target"}),
+            filter_rules=FilterRules(),
+            on_existing=OnExisting.FAIL,
+            transaction_mode=TransactionMode.SINGLE,
+        ),
+    )
+    use_case.execute()
+
+    assert writer.bulk_loads == [("target", "author", 1), ("target", "book", 1)]
+
+
 def test_migrate_on_existing_drop_invokes_emit_drops_between_schemas_and_tables() -> None:
     db = _build_database()
     emitter = RecordingEmitter()

@@ -29,7 +29,7 @@ from db2sql.application.ports import (
     TargetWriter,
 )
 from db2sql.domain.model import Database
-from db2sql.domain.policy import filter_database
+from db2sql.domain.policy import filter_database, resolve_schema_name
 
 from .materialize_views import materialize_views
 
@@ -94,7 +94,9 @@ class MigrateDatabaseUseCase:
                     rows = self._reader.iter_query_rows(table.source_query, limit=limit)
                 else:
                     rows = self._reader.iter_rows(schema_name, table, limit=limit)
-                self._writer.bulk_load(schema_name, table, rows)
+                # Rows go to the schema the DDL just created, not the source one.
+                target_schema = resolve_schema_name(options.mapping_schemas, schema_name)
+                self._writer.bulk_load(target_schema, table, rows)
 
     @staticmethod
     def _resolve_limit(

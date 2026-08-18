@@ -19,6 +19,7 @@ from sqlalchemy.engine import Connection, Engine
 
 from db2sql.application.ports import Logger
 from db2sql.domain.model import Table
+from db2sql.domain.policy import normalize_identifier
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.url import build_url, redact_url
 from db2sql.infrastructure.writer.errors import (
@@ -39,6 +40,7 @@ class PostgresTargetWriter:
     def __init__(self, config: AppConfig, logger: Logger) -> None:
         self._config = config
         self._logger = logger
+        self._preserve_case: bool = config.dump.preserve_case
         self._engine: Optional[Engine] = None
         self._connection: Optional[Connection] = None
 
@@ -133,9 +135,10 @@ class PostgresTargetWriter:
     def _connection_string_redacted(self) -> str:
         return redact_url(self._connection_string)
 
-    @staticmethod
-    def _quote_ident(name: str) -> str:
-        escaped = name.replace('"', '""')
+    def _quote_ident(self, name: str) -> str:
+        # Must apply the same case policy as PostgresSqlEmitter.quote_identifier:
+        # bulk_load targets the identifiers the emitted DDL just created.
+        escaped = normalize_identifier(name, self._preserve_case).replace('"', '""')
         return f'"{escaped}"'
 
     # Mirrors PostgresSqlEmitter._format_copy_value so the bytes hitting the

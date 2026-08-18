@@ -22,7 +22,7 @@ from typing import List
 from db2sql.application.dto import DumpRequest
 from db2sql.application.ports import SourceReader
 from db2sql.domain.model import Database, Table
-from db2sql.domain.policy import filter_database
+from db2sql.domain.policy import filter_database, resolve_schema_name
 from db2sql.infrastructure.config import AppConfig, to_dump_request
 from db2sql.infrastructure.logging import ConsoleLogger, Palette
 from db2sql.infrastructure.persistence.errors import SourceReaderError
@@ -176,7 +176,7 @@ def _print_plan(
     _print_header(logger, "Plan")
     options = request.options
     for schema_name, schema in database.schemas.items():
-        mapped = options.mapping_schemas.get(schema_name, schema_name)
+        mapped = resolve_schema_name(options.mapping_schemas, schema_name)
         suffix = "" if mapped == schema_name else f" → {mapped}"
         logger.info(f"schema {schema_name}{suffix}")
         for table_name in schema.tables:
