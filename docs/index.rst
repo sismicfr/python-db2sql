@@ -10,14 +10,14 @@ changes directly to a live target database (migrate mode).
 .. code-block:: console
 
    # SQLite → Postgres SQL file (default target)
-   $ db2sql --driver sqlite --dbname mydb.sqlite -f dump.sql
+   $ db2sql dump --driver sqlite --dbname mydb.sqlite -f dump.sql
 
    # MySQL → MSSQL SQL file
-   $ db2sql --driver mysql -H mysql.example.com -d mydb -u app -p s3cr3t \
+   $ db2sql dump --driver mysql -H mysql.example.com -d mydb -u app -p s3cr3t \
        --target mssql -f dump.sql
 
    # SQLite → live Postgres database (no intermediate file)
-   $ db2sql --driver sqlite --dbname mydb.sqlite migrate \
+   $ db2sql migrate --driver sqlite --dbname mydb.sqlite \
        --target-host localhost --target-dbname mytarget \
        --target-user postgres --target-password s3cr3t
 

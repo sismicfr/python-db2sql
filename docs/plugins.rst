@@ -28,8 +28,8 @@ The name you register becomes a usable value of ``driver:`` (readers) or
 :option:`--driver` / :option:`--target` on the CLI.
 
 A target dialect can ship either an emitter, a writer, or both. The built-in
-``postgres`` and ``mssql`` targets ship both, so ``db2sql --target postgres``
-(dump) and ``db2sql --target postgres migrate`` use the matched pair.
+``postgres`` and ``mssql`` targets ship both, so ``db2sql dump --target postgres``
+and ``db2sql migrate --target postgres`` use the matched pair.
 
 .. tip::
 
@@ -104,7 +104,7 @@ After ``pip install -e .``, the new driver is available immediately:
 
 .. code-block:: console
 
-   $ db2sql --driver mydriver --dbname … -f dump.sql
+   $ db2sql dump --driver mydriver --dbname … -f dump.sql
 
 Reader inputs come from :class:`~db2sql.infrastructure.config.schema.AppConfig`:
 
@@ -177,7 +177,7 @@ And use it:
 
 .. code-block:: console
 
-   $ db2sql --target mytarget -f dump.sql
+   $ db2sql dump --target mytarget -f dump.sql
 
 Call sequence
 ~~~~~~~~~~~~~
@@ -269,7 +269,7 @@ And use it:
 
 .. code-block:: console
 
-   $ db2sql --target mytarget migrate --target-host … --target-dbname …
+   $ db2sql migrate --target mytarget --target-host … --target-dbname …
 
 Writer inputs come from :class:`~db2sql.infrastructure.config.schema.AppConfig`:
 

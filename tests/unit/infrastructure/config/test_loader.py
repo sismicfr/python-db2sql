@@ -156,3 +156,45 @@ def test_unsupported_extension_error_carries_path(tmp_path: Path) -> None:
     err = ConfigUnsupportedFileExtensionError(".toml", str(tmp_path / "x.toml"))
     assert ".toml" in err.message
     assert "x.toml" in err.message
+
+
+def test_config_file_rejects_dsn_next_to_discrete_server_keys(tmp_path: Path) -> None:
+    """Declaring both in one file states two contradictory intents."""
+    cfg = tmp_path / "db2sql.yml"
+    cfg.write_text(
+        "driver: postgres\n" "server:\n" "  dsn: postgresql://u:p@h/db\n" "  hostname: elsewhere\n"
+    )
+    with pytest.raises(ConfigInvalidError, match=r"server\.dsn cannot be combined"):
+        load_config(cfg)
+
+
+def test_config_file_rejects_dsn_next_to_discrete_target_keys(tmp_path: Path) -> None:
+    cfg = tmp_path / "db2sql.yml"
+    cfg.write_text(
+        "driver: postgres\n"
+        "target_server:\n"
+        "  dsn: postgresql://u:p@h/db\n"
+        "  dbname: elsewhere\n"
+    )
+    with pytest.raises(ConfigInvalidError, match=r"target_server\.dsn cannot be combined"):
+        load_config(cfg)
+
+
+def test_config_file_accepts_a_dsn_on_its_own(tmp_path: Path) -> None:
+    cfg = tmp_path / "db2sql.yml"
+    cfg.write_text("driver: postgres\nserver:\n  dsn: postgresql://u:p@h/db\n")
+    assert load_config(cfg).server.dsn == "postgresql://u:p@h/db"
+
+
+def test_config_file_accepts_a_dsn_next_to_non_connection_keys(tmp_path: Path) -> None:
+    """options describe what to export, not how to connect — no conflict."""
+    cfg = tmp_path / "db2sql.yml"
+    cfg.write_text(
+        "driver: oracle\n"
+        "server:\n"
+        "  dsn: oracle+oracledb://u:p@h:1521/?service_name=PDB1\n"
+        "  options:\n"
+        "    owner: HR\n"
+    )
+    config = load_config(cfg)
+    assert config.server.options == {"owner": "HR"}
