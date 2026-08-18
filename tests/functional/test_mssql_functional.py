@@ -25,6 +25,8 @@ from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.emit.postgres.emitter import PostgresSqlEmitter
 from db2sql.infrastructure.persistence.mssql.reader import MSSQLSourceReader
 
+from .conftest import require_schema
+
 pytestmark = pytest.mark.functional
 
 
@@ -68,7 +70,7 @@ EXPECTED_TYPES = {
 def mssql_metadata(mssql_config: AppConfig, null_logger):
     pytest.importorskip("pymssql")
     reader = MSSQLSourceReader(mssql_config, null_logger)
-    return reader.collect_metadata()
+    return require_schema(reader.collect_metadata(), "apptest")
 
 
 def test_mssql_schema_and_tables(mssql_metadata) -> None:

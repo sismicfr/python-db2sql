@@ -16,6 +16,8 @@ from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.emit.postgres.emitter import PostgresSqlEmitter
 from db2sql.infrastructure.persistence.oracle.reader import OracleSourceReader
 
+from .conftest import require_schema
+
 pytestmark = [pytest.mark.functional, pytest.mark.oracle]
 
 
@@ -48,7 +50,7 @@ EXPECTED_TYPES = {
 def oracle_metadata(oracle_config: AppConfig, null_logger):
     pytest.importorskip("oracledb")
     reader = OracleSourceReader(oracle_config, null_logger)
-    return reader.collect_metadata()
+    return require_schema(reader.collect_metadata(), "APPTEST")
 
 
 def test_oracle_schema_and_tables(oracle_metadata) -> None:

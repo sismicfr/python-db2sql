@@ -19,6 +19,8 @@ from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.emit.postgres.emitter import PostgresSqlEmitter
 from db2sql.infrastructure.persistence.mysql.reader import MySQLSourceReader
 
+from .conftest import require_schema
+
 pytestmark = pytest.mark.functional
 
 
@@ -58,7 +60,7 @@ EXPECTED_TYPES = {
 def mysql_metadata(mysql_config: AppConfig, null_logger):
     pytest.importorskip("pymysql")
     reader = MySQLSourceReader(mysql_config, null_logger)
-    return reader.collect_metadata()
+    return require_schema(reader.collect_metadata(), "db2sqltest")
 
 
 def test_mysql_schema_and_tables(mysql_metadata) -> None:

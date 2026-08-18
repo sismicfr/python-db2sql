@@ -17,6 +17,7 @@ from typing import Iterator
 
 import pytest
 
+from db2sql.domain.model import Database
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.config.schema import ServerConfig
 
@@ -47,6 +48,28 @@ def _check_tcp(host: str, port: int, timeout: float = 2.0) -> None:
             return
     except OSError as exc:
         pytest.skip(f"cannot reach {host}:{port} ({exc}) — run `make stack-up` first")
+
+
+def require_schema(database: Database, schema: str) -> Database:
+    """Fail early, and legibly, when the container's fixture was never loaded.
+
+    A reachable server whose init script did not replay hands the reader an
+    empty :class:`Database`. Every test in the module then dies on an opaque
+    ``KeyError`` on the schema name, which says nothing about the container
+    being the problem. Turn that into one sentence naming what is missing and
+    what to run. This is not a skip: the server answered, so the stack is
+    genuinely broken and the suite must go red.
+    """
+    if schema in database.schemas:
+        return database
+    present = ", ".join(sorted(database.schemas)) or "none"
+    pytest.fail(
+        f"schema {schema!r} is missing from the source database (present: {present}). "
+        "The container is up but its init script has not populated it — those "
+        "scripts only replay on a fresh volume, so run `make stack-reset` and "
+        "start the stack again, then check `make stack-logs` for errors.",
+        pytrace=False,
+    )
 
 
 @pytest.fixture(scope="session")

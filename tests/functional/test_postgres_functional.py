@@ -23,6 +23,8 @@ from db2sql.infrastructure.emit.mssql.emitter import MssqlSqlEmitter
 from db2sql.infrastructure.emit.postgres.emitter import PostgresSqlEmitter
 from db2sql.infrastructure.persistence.postgres.reader import PostgresSourceReader
 
+from .conftest import require_schema
+
 pytestmark = pytest.mark.functional
 
 
@@ -59,7 +61,7 @@ EXPECTED_TYPES = {
 def postgres_metadata(postgres_config: AppConfig, null_logger):
     pytest.importorskip("psycopg2")
     reader = PostgresSourceReader(postgres_config, null_logger)
-    return reader.collect_metadata()
+    return require_schema(reader.collect_metadata(), "apptest")
 
 
 def test_postgres_schema_and_tables(postgres_metadata) -> None:
