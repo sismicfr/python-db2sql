@@ -7,7 +7,14 @@ import warnings
 
 import pytest
 
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import (
+    Column,
+    Database,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Schema,
+    Table,
+)
 from db2sql.infrastructure.emit.mssql import MssqlSqlEmitter
 
 
@@ -225,9 +232,10 @@ class TestEmitTablesFkIndexes:
         emitter = MssqlSqlEmitter(preserve_case=True)
         db = self._db()
         book = Table(name="book")
-        col = Column(name="author_id", type="int")
-        col.foreign_key = ForeignKey("public", "author", "id")
-        book.add_column(col)
+        book.add_column(Column(name="author_id", type="int"))
+        book.foreign_key_constraints.append(
+            ForeignKeyConstraint("fk_book_author", "public", "author", ("author_id",), ("id",))
+        )
         db.schemas["public"].add_table(book)
         sink = _Sink()
         emitter.emit_foreign_keys(db, sink)
@@ -239,13 +247,31 @@ class TestEmitTablesFkIndexes:
         emitter = MssqlSqlEmitter(preserve_case=True)
         db = self._db()
         book = Table(name="book")
-        col = Column(name="author_id", type="int")
-        col.foreign_key = ForeignKey("missing", "author", "id")
-        book.add_column(col)
+        book.add_column(Column(name="author_id", type="int"))
+        book.foreign_key_constraints.append(
+            ForeignKeyConstraint("fk_book_author", "missing", "author", ("author_id",), ("id",))
+        )
         db.schemas["public"].add_table(book)
         sink = _Sink()
         emitter.emit_foreign_keys(db, sink)
         assert "ALTER TABLE" not in sink.text
+
+    def test_emit_foreign_keys_composite(self) -> None:
+        emitter = MssqlSqlEmitter(preserve_case=True)
+        db = self._db()
+        child = Table(name="child")
+        child.add_column(Column(name="a", type="int"))
+        child.add_column(Column(name="b", type="int"))
+        child.foreign_key_constraints.append(
+            ForeignKeyConstraint("fk_child", "public", "author", ("a", "b"), ("id", "name"))
+        )
+        db.schemas["public"].add_table(child)
+        sink = _Sink()
+        emitter.emit_foreign_keys(db, sink)
+        assert "ADD FOREIGN KEY ([a], [b])" in sink.text
+        assert "REFERENCES [public].[author] ([id], [name])" in sink.text
+        # One statement for the whole constraint, not one per column.
+        assert sink.text.count("ALTER TABLE") == 1
 
     def test_emit_indexes(self) -> None:
         emitter = MssqlSqlEmitter(preserve_case=True)

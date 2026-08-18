@@ -8,10 +8,11 @@ from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import Column, Database, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.persistence.foreign_keys import ForeignKeyColumn, attach_foreign_keys
 from db2sql.infrastructure.url import build_url, redact_url
 
 _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")
@@ -116,7 +117,8 @@ class PostgresSourceReader:
     def _read_foreign_keys(self, database: Database) -> None:
         rows = self._ensure_session().execute(
             text(
-                "SELECT k1.TABLE_SCHEMA, k1.TABLE_NAME, k1.COLUMN_NAME, "
+                "SELECT rc.CONSTRAINT_NAME, "
+                "       k1.TABLE_SCHEMA, k1.TABLE_NAME, k1.COLUMN_NAME, "
                 "       k2.TABLE_SCHEMA AS REF_SCHEMA, k2.TABLE_NAME AS REF_TABLE, "
                 "       k2.COLUMN_NAME AS REF_COLUMN "
                 "FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc "
@@ -127,17 +129,26 @@ class PostgresSourceReader:
                 "  ON k2.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME "
                 " AND k2.CONSTRAINT_SCHEMA = rc.UNIQUE_CONSTRAINT_SCHEMA "
                 " AND k1.ORDINAL_POSITION = k2.ORDINAL_POSITION "
-                f"WHERE k1.TABLE_SCHEMA NOT IN {_SYSTEM_SCHEMAS}"
+                f"WHERE k1.TABLE_SCHEMA NOT IN {_SYSTEM_SCHEMAS} "
+                "ORDER BY k1.TABLE_SCHEMA, k1.TABLE_NAME, rc.CONSTRAINT_NAME, "
+                "         k1.ORDINAL_POSITION"
             )
         )
-        for row in rows:
-            table = database.get_table(row.table_schema, row.table_name)
-            if table is None:
-                continue
-            column = table.get_column(row.column_name)
-            if column is None:
-                continue
-            column.foreign_key = ForeignKey(row.ref_schema, row.ref_table, row.ref_column)
+        attach_foreign_keys(
+            database,
+            (
+                ForeignKeyColumn(
+                    constraint=row.constraint_name,
+                    schema=row.table_schema,
+                    table=row.table_name,
+                    column=row.column_name,
+                    ref_schema=row.ref_schema,
+                    ref_table=row.ref_table,
+                    ref_column=row.ref_column,
+                )
+                for row in rows
+            ),
+        )
 
     def _read_indexes(self, database: Database) -> None:
         rows = self._ensure_session().execute(

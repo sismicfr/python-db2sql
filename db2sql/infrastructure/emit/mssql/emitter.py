@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 from db2sql.application.ports import OutputSink
 from db2sql.domain.model import Column, Database, Schema, Table
-from db2sql.domain.policy import drop_order, normalize_identifier
+from db2sql.domain.policy import drop_order, normalize_identifier, resolve_schema_name
 
 # Source-side scalar functions to rewrite when targeting MSSQL. Keys lowercased,
 # parens stripped; matched with or without empty parens so Oracle bare keywords
@@ -151,7 +151,7 @@ class MssqlSqlEmitter:
         return f"[{escaped}]"
 
     def schema_name(self, schema: Schema) -> str:
-        mapped = self._schema_mapping.get(schema.name, schema.name)
+        mapped = resolve_schema_name(self._schema_mapping, schema.name)
         return self.quote_identifier(mapped)
 
     def table_name(self, schema: Schema, table: Table) -> str:
@@ -249,7 +249,7 @@ class MssqlSqlEmitter:
     def emit_schemas(self, database: Database, sink: OutputSink) -> None:
         emitted = set()
         for schema in database.schemas.values():
-            target = self._schema_mapping.get(schema.name, schema.name)
+            target = resolve_schema_name(self._schema_mapping, schema.name)
             if target in emitted:
                 continue
             emitted.add(target)
@@ -314,22 +314,22 @@ class MssqlSqlEmitter:
         for schema in database.schemas.values():
             for table in schema.tables.values():
                 qualified = self.table_name(schema, table)
-                for column in table.columns.values():
-                    fk = column.foreign_key
-                    if not fk:
-                        continue
-                    ref_schema = database.schemas.get(fk.schema)
+                for constraint in table.foreign_key_constraints:
+                    ref_schema = database.schemas.get(constraint.ref_schema)
                     if ref_schema is None:
                         continue
-                    ref_table = ref_schema.get_table(fk.table)
+                    ref_table = ref_schema.get_table(constraint.ref_table)
                     if ref_table is None:
                         continue
                     ref_qualified = self.table_name(ref_schema, ref_table)
+                    columns = ", ".join(self.quote_identifier(c) for c in constraint.columns)
+                    ref_columns = ", ".join(
+                        self.quote_identifier(c) for c in constraint.ref_columns
+                    )
                     sink.write(
                         f"ALTER TABLE {qualified} "
-                        f"ADD FOREIGN KEY ({self.quote_identifier(column.name)}) "
-                        f"REFERENCES {ref_qualified} "
-                        f"({self.quote_identifier(fk.column)});\n"
+                        f"ADD FOREIGN KEY ({columns}) "
+                        f"REFERENCES {ref_qualified} ({ref_columns});\n"
                     )
                     sink.boundary()
         sink.write("\n")

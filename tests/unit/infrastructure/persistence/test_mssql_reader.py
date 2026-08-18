@@ -137,6 +137,7 @@ def _populated_session() -> FakeSession:
         "REFERENTIAL_CONSTRAINTS",
         [
             FakeRow(
+                CONSTRAINT_NAME="FK_Order_Customer",
                 TABLE_SCHEMA="dbo",
                 TABLE_NAME="Order",
                 COLUMN_NAME="CustomerId",
@@ -145,6 +146,7 @@ def _populated_session() -> FakeSession:
                 UNIQUE_COLUMN_NAME="Id",
             ),
             FakeRow(
+                CONSTRAINT_NAME="FK_Order_Missing",
                 TABLE_SCHEMA="dbo",
                 TABLE_NAME="Order",
                 COLUMN_NAME="Missing",
@@ -153,6 +155,7 @@ def _populated_session() -> FakeSession:
                 UNIQUE_COLUMN_NAME="Id",
             ),
             FakeRow(
+                CONSTRAINT_NAME="FK_Phantom_Customer",
                 TABLE_SCHEMA="dbo",
                 TABLE_NAME="Phantom",
                 COLUMN_NAME="X",

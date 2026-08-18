@@ -8,10 +8,11 @@ from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import Column, Database, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.persistence.foreign_keys import ForeignKeyColumn, attach_foreign_keys
 from db2sql.infrastructure.url import build_url, database_from_url, redact_url
 
 
@@ -126,24 +127,29 @@ class MySQLSourceReader:
     def _read_foreign_keys(self, database: Database) -> None:
         rows = self._ensure_session().execute(
             text(
-                "SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME "
+                "SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME, "
+                "REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME "
                 "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE "
-                "WHERE TABLE_SCHEMA = :schema AND REFERENCED_TABLE_NAME IS NOT NULL"
+                "WHERE TABLE_SCHEMA = :schema AND REFERENCED_TABLE_NAME IS NOT NULL "
+                "ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION"
             ),
             {"schema": self._database_name},
         )
-        for row in rows:
-            table = database.get_table(self._database_name, row.TABLE_NAME)
-            if table is None:
-                continue
-            column = table.get_column(row.COLUMN_NAME)
-            if column is None:
-                continue
-            column.foreign_key = ForeignKey(
-                self._database_name,
-                row.REFERENCED_TABLE_NAME,
-                row.REFERENCED_COLUMN_NAME,
-            )
+        attach_foreign_keys(
+            database,
+            (
+                ForeignKeyColumn(
+                    constraint=row.CONSTRAINT_NAME,
+                    schema=self._database_name,
+                    table=row.TABLE_NAME,
+                    column=row.COLUMN_NAME,
+                    ref_schema=self._database_name,
+                    ref_table=row.REFERENCED_TABLE_NAME,
+                    ref_column=row.REFERENCED_COLUMN_NAME,
+                )
+                for row in rows
+            ),
+        )
 
     def _read_indexes(self, database: Database) -> None:
         rows = self._ensure_session().execute(

@@ -8,10 +8,11 @@ from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import Column, Database, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.persistence.foreign_keys import ForeignKeyColumn, attach_foreign_keys
 from db2sql.infrastructure.url import build_url, redact_url
 
 _DEFAULT_SCHEMA = "public"
@@ -118,15 +119,25 @@ class SQLiteSourceReader:
     def _read_foreign_keys(self, database: Database, table_name: str) -> None:
         session = self._ensure_session()
         rows = session.execute(text(f'PRAGMA foreign_key_list("{table_name}")')).fetchall()
-        table = database.get_table(self._schema, table_name)
-        if table is None:
-            return
-        for row in rows:
-            _, _, ref_table, src_col, ref_col, *_ = row
-            column = table.get_column(src_col)
-            if column is None:
-                continue
-            column.foreign_key = ForeignKey(self._schema, ref_table, ref_col)
+        # PRAGMA rows are (id, seq, ref_table, from, to, ...): `id` groups the
+        # columns of one constraint and `seq` is their ordinal position. SQLite
+        # names no foreign key, so the id stands in for the constraint name.
+        ordered = sorted(rows, key=lambda row: (row[0], row[1]))
+        attach_foreign_keys(
+            database,
+            (
+                ForeignKeyColumn(
+                    constraint=f"{table_name}_fk_{fk_id}",
+                    schema=self._schema,
+                    table=table_name,
+                    column=src_col,
+                    ref_schema=self._schema,
+                    ref_table=ref_table,
+                    ref_column=ref_col,
+                )
+                for fk_id, _, ref_table, src_col, ref_col, *_ in ordered
+            ),
+        )
 
     def iter_rows(  # pylint: disable=unused-argument
         self, schema: str, table: Table, limit: int = -1
