@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from yaml import safe_load as load_yaml
 
 from db2sql import const
+from db2sql.domain.policy import WILDCARD
 
 from .errors import (
     ConfigInvalidError,
@@ -161,6 +162,12 @@ def merge_cli_overrides(config: AppConfig, options: Mapping[str, Any]) -> AppCon
             dump["default_data_format"] = value
         elif key == "output_file_name":
             data["output_file"] = value
+        elif key == "target_schema":
+            # A catch-all entry, so per-schema entries from the config file keep
+            # winning over the CLI flag.
+            mapping = dict(dump.get("mapping_schemas") or {})
+            mapping[WILDCARD] = value
+            dump["mapping_schemas"] = mapping
         elif key == "split_size":
             data["split_size"] = value
 

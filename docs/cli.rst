@@ -338,6 +338,13 @@ Filtering
    ``schema.table`` notation.  Repeatable; comma-separated values are also
    accepted.
 
+.. option:: --target-schema NAME
+
+   Write every exported schema into ``NAME`` in the target.  Equivalent to a
+   ``*`` entry in ``dump.mapping_schemas``; per-schema entries in the config
+   file still take precedence.  Applies to both the emitted DDL and, under
+   ``db2sql migrate``, the schema rows are bulk-loaded into.
+
 General
 ~~~~~~~
 

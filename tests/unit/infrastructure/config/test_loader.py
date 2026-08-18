@@ -86,6 +86,15 @@ class TestMergeCliOverrides:
         merged = merge_cli_overrides(AppConfig(), {"output_file_name": "/tmp/out.sql"})
         assert merged.output_file == "/tmp/out.sql"
 
+    def test_target_schema_becomes_a_wildcard_mapping(self) -> None:
+        merged = merge_cli_overrides(AppConfig(), {"target_schema": "target"})
+        assert merged.dump.mapping_schemas == {"*": "target"}
+
+    def test_target_schema_keeps_explicit_mappings_from_the_config_file(self) -> None:
+        base = AppConfig.model_validate({"dump": {"mapping_schemas": {"dbo": "public"}}})
+        merged = merge_cli_overrides(base, {"target_schema": "target"})
+        assert merged.dump.mapping_schemas == {"dbo": "public", "*": "target"}
+
     def test_driver_override_replaces_base(self) -> None:
         merged = merge_cli_overrides(AppConfig(driver="mssql"), {"driver": "sqlite"})
         assert merged.driver == "sqlite"

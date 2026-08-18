@@ -481,6 +481,19 @@ def _add_selection_options(
             visible=visible,
         ),
     )
+    parser.add_argument(
+        "--target-schema",
+        metavar="NAME",
+        dest="target_schema",
+        type=str,
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Write every exported schema into NAME in the target. Equivalent to a "
+            "'*' entry in mapping_schemas; per-schema entries still take precedence.",
+            visible=visible,
+        ),
+        action=OnceArgument,
+    )
 
 
 def _add_dump_options(

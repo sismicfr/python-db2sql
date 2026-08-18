@@ -311,7 +311,8 @@ dump
    * - ``mapping_schemas``
      - ``{}``
      - Map source schema names to target names, e.g.
-       ``{dbo: public, legacy: archive}``.
+       ``{dbo: public, legacy: archive}``.  The ``*`` key is a catch-all
+       applied to every schema without an entry of its own.
    * - ``tables``
      - ``{}``
      - Per-table overrides (see :ref:`config-table-overrides`).
@@ -485,6 +486,18 @@ PostgreSQL's ``public``:
 
 The key is the source schema name; the value is the target schema name used
 in the generated SQL.
+
+The special key ``*`` is a catch-all: every schema without an entry of its own
+is written to that name.  It is how a multi-schema source collapses into a
+single target schema, and the ``--target-schema`` command-line option is a
+shorthand for it:
+
+.. code-block:: yaml
+
+   dump:
+     mapping_schemas:
+       dbo: public   # exact entries still win
+       "*": archive  # everything else lands in "archive"
 
 Recipes
 -------
