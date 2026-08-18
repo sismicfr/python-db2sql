@@ -51,7 +51,13 @@ Type mapping
      -
    * - ``numeric``, ``decimal``, ``number``
      - ``numeric``
-     - Precision/scale preserved when reported by the source.
+     - Precision/scale preserved when reported by the source.  A column
+       declared with an explicit scale of ``0`` (the ``NUMBER(n)`` pattern)
+       is promoted to the narrowest integer type that holds it —
+       ``smallint`` up to 4 digits, ``integer`` up to 9, ``bigint`` up to 18
+       — so identity columns can become ``serial``/``bigserial``.  Above 18
+       digits no integer type is wide enough, and the column stays
+       ``numeric(p,0)``.
    * - ``money``
      - ``numeric(19,4)``
      -

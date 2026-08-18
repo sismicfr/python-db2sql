@@ -46,6 +46,24 @@ _FUNCTION_CALL_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*$
 # MySQL ``bit`` default literal — ``b'0'`` / ``b'1'``.
 _MYSQL_BIT_RE = re.compile(r"^(?i:b)'([01]+)'$")
 
+# Largest decimal precision each PG integer type can hold *in full*: any
+# ``precision``-digit value fits, with room to spare. smallint tops out at
+# 32767 (5 digits, not all of them), integer at 2147483647 (10 digits),
+# bigint at 9223372036854775807 (19 digits) — hence 4 / 9 / 18.
+_INTEGER_PRECISION_LIMITS = ((4, "smallint"), (9, "integer"), (18, "bigint"))
+
+
+def _integer_type_for(precision: int) -> Optional[str]:
+    """Return the narrowest integer type that holds any ``precision``-digit value.
+
+    ``None`` when no integer type is wide enough, i.e. above 18 digits: those
+    have to stay ``numeric`` or the migration would silently overflow.
+    """
+    for limit, name in _INTEGER_PRECISION_LIMITS:
+        if precision <= limit:
+            return name
+    return None
+
 
 class PostgresSqlEmitter:
     """Produce PostgreSQL DDL+DML for a collected :class:`Database`."""
@@ -145,6 +163,15 @@ class PostgresSqlEmitter:
             if column.char_length and column.char_length > 0:
                 return f"{target}({column.char_length})"
         if target == "numeric" and column.precision:
+            # An explicit scale of 0 means the source stores integers in a
+            # decimal type — the common MSSQL / Oracle ``NUMBER(n)`` pattern.
+            # Promote to a native integer so identity columns can become
+            # serial/bigserial and FK types line up with referencing tables.
+            # A scale of None means "unknown", not "zero": leave those alone.
+            if column.scale == 0:
+                promoted = _integer_type_for(column.precision)
+                if promoted is not None:
+                    return promoted
             scale = column.scale or 0
             return f"numeric({column.precision},{scale})"
         return target

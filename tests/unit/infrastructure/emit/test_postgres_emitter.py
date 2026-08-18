@@ -86,6 +86,53 @@ class TestIdentifierAndTypeMapping:
         assert expected in emitter.column_definition(column)
 
 
+class TestZeroScaleNumericPromotion:
+    """``numeric(p,0)`` becomes a native integer when one is wide enough."""
+
+    def _definition(self, precision: int, scale: int | None) -> str:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        column = Column(name="c", type="numeric", precision=precision, scale=scale, nullable=True)
+        return emitter.column_definition(column)
+
+    @pytest.mark.parametrize(
+        "precision, expected",
+        [
+            (1, "smallint"),
+            (4, "smallint"),
+            (5, "integer"),
+            (9, "integer"),
+            (10, "bigint"),
+            (18, "bigint"),
+        ],
+    )
+    def test_narrowest_integer_type_is_chosen(self, precision: int, expected: str) -> None:
+        assert self._definition(precision, 0) == f'"c" {expected}'
+
+    @pytest.mark.parametrize("precision", [19, 20, 38])
+    def test_precision_above_bigint_stays_numeric(self, precision: int) -> None:
+        # bigint tops out at 9223372036854775807, so 19 digits can overflow.
+        # Promoting here would silently corrupt values during migration.
+        assert self._definition(precision, 0) == f'"c" numeric({precision},0)'
+
+    def test_non_zero_scale_is_never_promoted(self) -> None:
+        assert self._definition(10, 2) == '"c" numeric(10,2)'
+
+    def test_unknown_scale_is_not_promoted(self) -> None:
+        # scale=None means the source did not report one; that is not a
+        # statement that the column holds integers.
+        assert self._definition(10, None) == '"c" numeric(10,0)'
+
+    def test_promoted_identity_column_becomes_serial(self) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        column = Column(name="id", type="numeric", precision=9, scale=0, identity=True)
+        assert emitter.column_definition(column) == '"id" serial'
+
+    def test_promoted_wide_identity_column_becomes_bigserial(self) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        column = Column(name="id", type="numeric", precision=18, scale=0, identity=True)
+        assert emitter.column_definition(column) == '"id" bigserial'
+
+
 class TestColumnDefinition:
     def test_identity_integer_becomes_serial(self) -> None:
         emitter = PostgresSqlEmitter(preserve_case=True)
