@@ -30,7 +30,7 @@ The name you register becomes a usable value of `driver:` (readers) or
 ```bash
 cd examples/csv-producer
 pip install -e .          # registers driver=csv
-db2sql -c db2sql.yml      # uses the new reader, pipes to the built-in postgres emitter
+db2sql dump -C db2sql.yml   # uses the new reader, pipes to the built-in postgres emitter
 ```
 
 To verify a plugin was picked up:

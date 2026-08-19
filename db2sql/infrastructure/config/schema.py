@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -19,7 +19,24 @@ class ServerConfig(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
     dbname: Optional[str] = None
+    dsn: Optional[str] = None
     options: Dict[str, str] = Field(default_factory=dict)
+
+    def fields_shadowed_by_dsn(self) -> Tuple[str, ...]:
+        """Discrete connection fields that ``dsn`` makes irrelevant.
+
+        A DSN replaces the whole connection rather than merging with it, so
+        anything set alongside it is silently unused. Callers report this back
+        to the user instead of letting the mismatch pass unnoticed.
+        """
+        if not self.dsn:
+            return ()
+        return tuple(
+            name for name in _DISCRETE_CONNECTION_FIELDS if getattr(self, name) is not None
+        )
+
+
+_DISCRETE_CONNECTION_FIELDS = ("hostname", "port", "username", "password", "dbname")
 
 
 class TableOverride(BaseModel):
