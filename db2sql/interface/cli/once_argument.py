@@ -16,7 +16,11 @@ class OnceArgument(argparse.Action):
         values: Union[str, Any, Sequence[Any], None],
         option_string: Optional[str] = None,
     ) -> None:
-        if getattr(namespace, self.dest) is not None and self.default is None:
+        # A SUPPRESS default means argparse leaves the attribute unset until the
+        # flag is seen, so a present value can only come from a first occurrence
+        # — same situation as a None default, and the check applies as well.
+        unset_by_default = self.default is None or self.default is argparse.SUPPRESS
+        if getattr(namespace, self.dest, None) is not None and unset_by_default:
             msg = f"{option_string or 'undefined'} can only be specified once"
             raise argparse.ArgumentError(None, msg)
         setattr(namespace, self.dest, values)

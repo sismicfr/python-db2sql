@@ -120,6 +120,15 @@ pip install -e ".[mssql,postgres]" pyinstaller
 python installer/build.py
 ```
 
+Drivers that reach their dependencies from compiled extension modules need
+those dependencies collected explicitly — PyInstaller only analyses Python
+bytecode, so imports made from a `.so`/`.pyd` are invisible to it. These are
+listed in `DRIVER_HIDDEN_PACKAGES` in `build.py`: Oracle's thin mode
+(`oracledb.thin_impl`, a compiled Cython module) imports `cryptography`, and
+without it the binary fails at connection time with *“python-oracledb thin
+mode cannot be used because the cryptography package cannot be imported”*.
+The build aborts if such a companion package is missing from the environment.
+
 ## Spec file (advanced)
 
 For tweaks that don’t fit `build.py`’s flags (custom hooks, code signing,

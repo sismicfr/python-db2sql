@@ -12,6 +12,7 @@ from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.url import build_url, redact_url
 
 _DEFAULT_SCHEMA = "public"
 
@@ -28,14 +29,17 @@ class SQLiteSourceReader:
 
     @property
     def _connection_string(self) -> str:
-        path = self._config.server.options.get("path") or self._config.server.dbname
+        server = self._config.server
+        if server.dsn:
+            return build_url(server, "sqlite", credentials=False)
+        path = server.options.get("path") or server.dbname
         if not path:
-            raise SourceReaderError("SQLite reader requires server.dbname or options.path")
-        return f"sqlite:///{path}"
+            raise SourceReaderError("SQLite reader requires server.dbname, options.path, or a DSN")
+        return build_url(server, "sqlite", database=str(path), credentials=False)
 
     def _ensure_session(self) -> Session:
         if self._session is None:
-            self._logger.info(f"set connection to {self._connection_string}")
+            self._logger.info(f"set connection to {redact_url(self._connection_string)}")
             self._engine = create_engine(self._connection_string)
             self._session = sessionmaker(bind=self._engine)()
         return self._session

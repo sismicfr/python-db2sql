@@ -90,7 +90,9 @@ services:
     profiles: ["oracle"]
     image: gvenzl/oracle-free:23-slim
     environment:
-      ORACLE_PASSWORD: ${ORACLE_PASSWORD:-oraclepw}
+      # SYS password. Not ORACLE_PASSWORD on the host side: the tests use that
+      # name for the APP_USER password they connect with.
+      ORACLE_PASSWORD: ${ORACLE_SYS_PASSWORD:-oraclepw}
       APP_USER: ${ORACLE_APP_USER:-apptest}
       APP_USER_PASSWORD: ${ORACLE_APP_PASSWORD:-apptestpw}
     ports:

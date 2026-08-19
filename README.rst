@@ -7,8 +7,12 @@ db2sql
 
 Two output modes are supported:
 
-* **Dump mode** (default) — write a SQL file (or stream to ``stdout``) that can later be replayed with ``psql -f`` or ``sqlcmd -i``.
-* **Migrate mode** — open a live connection to the target database and apply the same DDL and data directly, without an intermediate file. The DDL produced is byte-identical to dump mode: a single ``SqlEmitter`` is the source of truth in both paths.
+* ``db2sql dump`` (the default command) — write a SQL file (or stream to ``stdout``) that can later be replayed with ``psql -f`` or ``sqlcmd -i``.
+* ``db2sql migrate`` — open a live connection to the target database and apply the same DDL and data directly, without an intermediate file. The DDL produced is byte-identical to dump mode: a single ``SqlEmitter`` is the source of truth in both paths.
+
+Two helper commands round out the CLI: ``db2sql init`` generates a configuration file through an interactive wizard, and ``db2sql validate`` checks one (optionally previewing the export plan) before a long run.
+
+Running ``db2sql`` with dump options but no command is a shorthand for ``db2sql dump`` — both forms are supported and produce identical output.
 
 
 Installation
@@ -46,7 +50,7 @@ dump, but without the round-trip through a ``.sql`` file:
 .. code-block:: console
 
    # SQLite source → live Postgres target
-   $ db2sql --driver sqlite --dbname mydb.sqlite migrate \
+   $ db2sql migrate --driver sqlite --dbname mydb.sqlite \
        --target-host localhost --target-port 5432 \
        --target-dbname mytarget --target-user postgres --target-password s3cr3t
 
@@ -69,7 +73,7 @@ order:
 
 .. code-block:: console
 
-   $ db2sql --driver sqlite --dbname mydb.sqlite --on-existing drop -f dump.sql
+   $ db2sql dump --driver sqlite --dbname mydb.sqlite --on-existing drop -f dump.sql
 
 Pass ``--on-existing truncate`` to produce a *data-only* script: no DDL is
 emitted, the dump just ``TRUNCATE``\s every managed table and reloads its
@@ -77,7 +81,35 @@ rows. Use it to refresh data into a pre-existing schema:
 
 .. code-block:: console
 
-   $ db2sql --driver sqlite --dbname mydb.sqlite --on-existing truncate -f refresh.sql
+   $ db2sql dump --driver sqlite --dbname mydb.sqlite --on-existing truncate -f refresh.sql
+
+
+Connecting with a DSN
+---------------------
+
+The discrete ``-H`` / ``-P`` / ``-d`` / ``-u`` / ``-p`` flags cover the common
+case. When you need something they cannot express — a TLS mode, a charset, an
+Oracle ``service_name``, an alternative DBAPI — pass a full SQLAlchemy URL
+instead:
+
+.. code-block:: console
+
+   # prefer the environment: a DSN on the command line is visible in `ps`
+   $ export DB2SQL_SOURCE_DSN='postgresql+psycopg2://app:s3cr3t@pg.example.com:5432/mydb?sslmode=require'
+   $ db2sql dump --driver postgres -f dump.sql
+
+   # and its mirror for a live migration
+   $ export DB2SQL_TARGET_DSN='postgresql+psycopg2://svc@target.internal:5432/stage'
+   $ db2sql migrate --driver mysql -H mysql.example.com -d mydb -u app -W
+
+A DSN **replaces** the connection rather than merging with it, and the URL
+dialect must match ``--driver`` / ``--target``. Passing a DSN together with
+``-H`` / ``-d`` / … on the same command line — or declaring both in the same
+config file — is rejected as a contradiction; a DSN overriding a connection
+that came from a config file or the environment is allowed, and warns about
+what it dropped. Passwords are always redacted in log output. See the
+`CLI reference <https://python-db2sql.readthedocs.org/en/stable/cli.html>`__
+for the full semantics.
 
 
 Validating a configuration

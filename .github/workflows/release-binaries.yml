@@ -60,7 +60,7 @@ jobs:
       # call setup-python on bare host runners (Windows / macOS).
       - name: Set up Python (host runners only)
         if: matrix.container == ''
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -95,7 +95,7 @@ jobs:
         run: python installer/build.py --archive
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: db2sql-${{ matrix.label }}
           path: ${{ matrix.archive-glob }}
