@@ -8,11 +8,13 @@ __all__ = [
     "ENV_DB2SQL_HOST",
     "ENV_DB2SQL_PORT",
     "ENV_DB2SQL_DBNAME",
+    "ENV_DB2SQL_SOURCE_DSN",
     "ENV_DB2SQL_TARGET_HOST",
     "ENV_DB2SQL_TARGET_PORT",
     "ENV_DB2SQL_TARGET_USER",
     "ENV_DB2SQL_TARGET_PASSWORD",
     "ENV_DB2SQL_TARGET_DBNAME",
+    "ENV_DB2SQL_TARGET_DSN",
     "ENV_NO_COLOR",
     "ENV_CLICOLOR_FORCE",
     "ENV_DB2SQL_COLOR_DARK",
@@ -40,6 +42,9 @@ ENV_DB2SQL_PORT = "DB2SQL_PORT"
 ENV_DB2SQL_DBNAME = "DB2SQL_DBNAME"
 """Source database name."""
 
+ENV_DB2SQL_SOURCE_DSN = "DB2SQL_SOURCE_DSN"
+"""Full SQLAlchemy URL for the source database; overrides the discrete fields."""
+
 ENV_DB2SQL_TARGET_HOST = "DB2SQL_TARGET_HOST"
 """Target database host (live migration)."""
 
@@ -54,6 +59,9 @@ ENV_DB2SQL_TARGET_PASSWORD = "DB2SQL_TARGET_PASSWORD"
 
 ENV_DB2SQL_TARGET_DBNAME = "DB2SQL_TARGET_DBNAME"
 """Target database name (live migration)."""
+
+ENV_DB2SQL_TARGET_DSN = "DB2SQL_TARGET_DSN"
+"""Full SQLAlchemy URL for the target database (live migration)."""
 
 ENV_NO_COLOR = "NO_COLOR"
 """Disable ANSI colors."""

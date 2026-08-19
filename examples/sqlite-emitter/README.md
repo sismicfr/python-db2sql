@@ -4,7 +4,7 @@ A db2sql plugin that registers a new `target: sqlite`. It produces SQL that
 can be loaded straight into `sqlite3`:
 
 ```bash
-db2sql -c db2sql.yml > dump.sql
+db2sql dump -C db2sql.yml > dump.sql
 sqlite3 destination.db < dump.sql
 ```
 
@@ -32,7 +32,7 @@ Point any existing reader at the example. The provided `db2sql.yml` reuses
 the built-in SQLite reader for source, and uses the new emitter for output:
 
 ```bash
-db2sql -c db2sql.yml > dump.sql
+db2sql dump -C db2sql.yml > dump.sql
 ```
 
 ## What to look at

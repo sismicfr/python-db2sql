@@ -87,17 +87,39 @@ class Cli:
                     }
                 )
 
+            self._warn_about_shadowed_fields(options.config)
+
             if getattr(options, "command", None) == COMMAND_MIGRATE:
                 target_driver = getattr(options, "target_driver", None)
                 self._execute_migrate(options.config, target_driver)
                 return SUCCESS
 
+            # Either an explicit COMMAND_DUMP or no subcommand at all: dump is
+            # the default command, so both land here.
             self._execute(options.config)
         except Exception as exc:
             if not isinstance(exc, AbortExecution):
                 self._logger.trace_exception(exc)
             raise exc
         return SUCCESS
+
+    def _warn_about_shadowed_fields(self, config: AppConfig) -> None:
+        """Tell the user which connection settings a DSN is making irrelevant.
+
+        A DSN replaces the connection wholesale rather than merging with the
+        discrete flags, so leftovers from a config file or an environment
+        variable would otherwise be dropped without a word.
+        """
+        for label, server in (
+            ("--source-dsn", config.server),
+            ("--target-dsn", config.target_server),
+        ):
+            shadowed = server.fields_shadowed_by_dsn()
+            if shadowed:
+                self._logger.warning(
+                    f"{label} is set: ignoring {', '.join(shadowed)} "
+                    f"(a DSN replaces the connection, it does not merge with it)"
+                )
 
     def _execute(self, config: AppConfig) -> None:
         reader = get_source_reader(config.driver, config, self._logger)
