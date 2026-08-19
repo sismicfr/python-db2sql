@@ -57,6 +57,18 @@ DIST_NAME = "python_db2sql"
 # ``psycopg2`` module under a different distribution name.
 OPTIONAL_DRIVERS = ("pymssql", "pymysql", "psycopg2", "oracledb")
 
+# Packages a driver imports from *compiled* extension modules. PyInstaller
+# analyses Python bytecode only, so anything imported from a .so/.pyd is
+# invisible to it and must be collected explicitly.
+#
+# oracledb's thin mode lives in ``thin_impl`` (a compiled Cython module) and
+# imports ``cryptography`` — notably ``cryptography.x509``. Only the parts
+# reachable from ``oracledb.plugins.oci_tokens``
+# (``cryptography.hazmat.primitives``) end up in the bundle by accident, hence
+# the runtime failure "thin mode cannot be used because the cryptography
+# package cannot be imported / cannot import name x509".
+DRIVER_HIDDEN_PACKAGES = {"oracledb": ("cryptography",)}
+
 
 def _is_module_available(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
@@ -242,6 +254,16 @@ def build(
         dist_name = _resolve_dist_name(module_name)
         if dist_name is not None:
             args.extend(["--copy-metadata", dist_name])
+        for package in DRIVER_HIDDEN_PACKAGES.get(module_name, ()):
+            if not _is_module_available(package):
+                raise SystemExit(
+                    f"{module_name} is installed but its required companion package "
+                    f"'{package}' is not: the resulting binary would fail at runtime. "
+                    f"Install it in the build environment (pip install {package})."
+                )
+            # --collect-all pulls submodules, data files, binaries (the Rust
+            # extension of cryptography) and metadata in one go.
+            args.extend(["--collect-all", package])
 
     if platform.system() == "Windows":
         version_file = build_dir / "windows-version-file.txt"
@@ -262,12 +284,14 @@ def build(
 
     _run_pyinstaller(args, env)
 
+    # In --onedir mode ``dist/db2sql`` is the bundle *directory*, and the
+    # executable sits inside it — hence the is_file() checks.
     binary = dist_dir / _executable_name()
-    if not binary.exists():
+    if not binary.is_file():
         candidate = dist_dir / EXE_NAME / _executable_name()
-        if candidate.exists():
+        if candidate.is_file():
             binary = candidate
-    if not binary.exists():
+    if not binary.is_file():
         raise SystemExit(f"PyInstaller did not produce the expected binary at {binary}")
 
     _smoke_test(binary)

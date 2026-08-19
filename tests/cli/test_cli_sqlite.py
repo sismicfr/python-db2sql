@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from db2sql.interface.cli import Cli
+from db2sql.interface.cli import Cli, main
 
 
 def test_cli_main_end_to_end(sample_db: Path, tmp_path: Path, monkeypatch) -> None:
@@ -78,3 +78,89 @@ def test_cli_target_mssql_end_to_end(sample_db: Path, tmp_path: Path, monkeypatc
     # MSSQL output must not contain Postgres-only constructs
     assert "COPY " not in contents
     assert "serial" not in contents
+
+
+def test_cli_explicit_dump_command_matches_implicit_form(
+    sample_db: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """``db2sql dump ...`` must produce exactly what the bare form produces."""
+    monkeypatch.setattr(sys, "argv", ["db2sql"])
+    implicit_file = tmp_path / "implicit.sql"
+    explicit_file = tmp_path / "explicit.sql"
+
+    common = ["--driver", "sqlite", "-d", str(sample_db), "--preserve-case", "-f"]
+    assert Cli().run(common + [str(implicit_file)]) == 0
+    assert Cli().run(["dump"] + common + [str(explicit_file)]) == 0
+
+    assert explicit_file.read_text() == implicit_file.read_text()
+
+
+def test_cli_source_dsn_matches_the_discrete_connection_flags(
+    sample_db: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """A DSN must reach the very same database as -d does."""
+    monkeypatch.setattr(sys, "argv", ["db2sql"])
+    via_flags = tmp_path / "flags.sql"
+    via_dsn = tmp_path / "dsn.sql"
+
+    assert (
+        Cli().run(["dump", "--driver", "sqlite", "-d", str(sample_db), "-f", str(via_flags)]) == 0
+    )
+    assert (
+        Cli().run(
+            [
+                "dump",
+                "--driver",
+                "sqlite",
+                "--source-dsn",
+                f"sqlite:///{sample_db}",
+                "-f",
+                str(via_dsn),
+            ]
+        )
+        == 0
+    )
+
+    assert via_dsn.read_text() == via_flags.read_text()
+
+
+def test_cli_source_dsn_of_another_dialect_is_rejected(
+    sample_db: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """A postgres DSN handed to the sqlite driver must fail, not connect anyway."""
+    monkeypatch.setattr(sys, "argv", ["db2sql"])
+    output_file = tmp_path / "never.sql"
+    rc = main(
+        [
+            "dump",
+            "--driver",
+            "sqlite",
+            "--source-dsn",
+            "postgresql://u:p@h/d",
+            "-f",
+            str(output_file),
+        ]
+    )
+    assert rc != 0
+
+
+def test_cli_dump_command_accepts_options_before_and_after_the_verb(
+    sample_db: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """Flags may sit on either side of ``dump`` — the root aliases still parse."""
+    monkeypatch.setattr(sys, "argv", ["db2sql"])
+    output_file = tmp_path / "dump.sql"
+    rc = Cli().run(
+        [
+            "--driver",
+            "sqlite",
+            "dump",
+            "-d",
+            str(sample_db),
+            "--preserve-case",
+            "-f",
+            str(output_file),
+        ]
+    )
+    assert rc == 0
+    assert 'COPY "public"."book"' in output_file.read_text()
