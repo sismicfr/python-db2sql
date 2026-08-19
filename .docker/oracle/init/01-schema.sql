@@ -1,14 +1,20 @@
 -- Functional-test fixture for Oracle (gvenzl/oracle-free).
--- Executed inside the FREEPDB1 pluggable database as the APP_USER.
 -- Covers every Oracle source type referenced by
 -- db2sql/infrastructure/emit/postgres/emitter.py:DEFAULT_TYPE_MAP, plus an
 -- IDENTITY column (12c+), a foreign key and a non-unique index.
 --
 -- Notes:
---   * The script targets the per-PDB connection set up by gvenzl/oracle-free,
---     so the current user is APP_USER (APPTEST). Tables are created in that
---     schema; the reader filters on owner = 'APPTEST'.
+--   * gvenzl runs *.sql init files with `sqlplus / as sysdba`, so we start out
+--     as SYS in the CDB root. Hence the two ALTER SESSION below: without them
+--     the tables end up in SYS and APPTEST stays empty.
+--   * PDB and schema names are hardcoded — keep them in sync with
+--     ORACLE_APP_USER in .docker/docker-compose.yml.
 --   * LONG can only be used once per table, so it lives in its own table.
+
+WHENEVER SQLERROR EXIT SQL.ERROR;
+
+ALTER SESSION SET CONTAINER = FREEPDB1;
+ALTER SESSION SET CURRENT_SCHEMA = APPTEST;
 
 ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';
 ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD HH24:MI:SS.FF';
