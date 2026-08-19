@@ -12,6 +12,7 @@ from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.url import build_url, database_from_url, redact_url
 
 
 class MySQLSourceReader:
@@ -25,26 +26,24 @@ class MySQLSourceReader:
 
     def _ensure_session(self) -> Session:
         if self._session is None:
-            self._logger.info(f"set connection to {self._connection_string}")
+            self._logger.info(f"set connection to {redact_url(self._connection_string)}")
             self._engine = create_engine(self._connection_string)
             self._session = sessionmaker(bind=self._engine)()
         return self._session
 
     @property
     def _connection_string(self) -> str:
-        server = self._config.server
-        port = f":{server.port}" if server.port else ""
-        username = server.username or ""
-        password = server.password or ""
-        hostname = server.hostname or ""
-        dbname = server.dbname or ""
-        return f"mysql+pymysql://{username}:{password}@{hostname}{port}/{dbname}"
+        return build_url(self._config.server, "mysql+pymysql")
 
     @property
     def _database_name(self) -> str:
-        if not self._config.server.dbname:
-            raise SourceReaderError("MySQL reader requires server.dbname")
-        return str(self._config.server.dbname)
+        # MySQL has no schema layer: the database name doubles as the schema
+        # every table is filed under, so it must be known even with a DSN.
+        server = self._config.server
+        name = database_from_url(server.dsn) if server.dsn else server.dbname
+        if not name:
+            raise SourceReaderError("MySQL reader requires server.dbname or a DSN naming it")
+        return str(name)
 
     def collect_metadata(self) -> Database:
         database = Database(self._database_name)

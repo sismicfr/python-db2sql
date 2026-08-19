@@ -144,7 +144,7 @@ jobs:
 
       - name: Upload stack logs artifact
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-stack-logs-functional
           path: artifacts/
@@ -170,10 +170,13 @@ jobs:
       ORACLE_HOST: localhost
       ORACLE_PORT: "1521"
       ORACLE_SERVICE: FREEPDB1
-      ORACLE_PASSWORD: oraclepw
+      # Read by docker compose to bootstrap the container
+      ORACLE_SYS_PASSWORD: oraclepw
       ORACLE_APP_USER: apptest
       ORACLE_APP_PASSWORD: apptestpw
+      # Read by the pytest fixtures — they connect as the app user, not SYS
       ORACLE_USER: apptest
+      ORACLE_PASSWORD: apptestpw
     steps:
       - uses: actions/checkout@v4
 
@@ -189,7 +192,22 @@ jobs:
         run: pip install -e ".[all]" pytest
 
       - name: Start Oracle container and wait until healthy
-        run: docker compose -f .docker/docker-compose.yml --profile oracle up -d --wait
+        run: docker compose -f .docker/docker-compose.yml --profile oracle up -d --wait oracle
+
+      # The container is healthy even when the init SQL failed, and the tests
+      # then fail on a missing schema. Cheaper to catch it here.
+      - name: Verify Oracle fixture schema
+        run: |
+          docker compose -f .docker/docker-compose.yml --profile oracle exec -T oracle \
+            sqlplus -s -L "${ORACLE_USER}/${ORACLE_PASSWORD}@//localhost:1521/${ORACLE_SERVICE}" <<'SQL' | tee fixture-check.txt
+          set heading off pagesize 0 feedback off
+          SELECT 'FIXTURE_TABLES=' || COUNT(*) FROM user_tables;
+          exit;
+          SQL
+          grep -qE 'FIXTURE_TABLES=[1-9]' fixture-check.txt || {
+            echo "::error::Oracle init script did not create the ${ORACLE_USER} fixture — see the container logs";
+            exit 1;
+          }
 
       - name: Run Oracle functional tests
         run: pytest -m oracle tests/functional -v
@@ -203,7 +221,7 @@ jobs:
 
       - name: Upload Oracle logs artifact
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-stack-logs-oracle
           path: artifacts/
