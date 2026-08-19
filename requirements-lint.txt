@@ -7,5 +7,5 @@ import-linter==2.12
 isort==5.13.2
 mypy==1.19.1
 pylint==3.3.9
-types-PyYAML==6.0.12
+types-PyYAML==6.0.12.20250915
 types-setuptools==75.5.0.20241116
