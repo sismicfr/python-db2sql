@@ -68,7 +68,7 @@ def iter_query_rows(session: Session, query: str, limit: int = -1) -> Iterator[T
     result: Result[Any] = session.execute(text(query))
     try:
         for index, row in enumerate(result):
-            if limit and limit > 0 and index >= limit:
+            if 0 < limit <= index:
                 break
             yield tuple(row)
     finally:

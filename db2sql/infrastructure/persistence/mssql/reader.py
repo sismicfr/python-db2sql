@@ -12,6 +12,7 @@ from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.url import build_url, redact_url
 
 
 class MSSQLSourceReader:
@@ -25,22 +26,14 @@ class MSSQLSourceReader:
 
     def _ensure_session(self) -> Session:
         if self._session is None:
-            self._logger.info(f"set connection to {self._connection_string}")
+            self._logger.info(f"set connection to {redact_url(self._connection_string)}")
             self._engine = create_engine(self._connection_string)
             self._session = sessionmaker(bind=self._engine)()
         return self._session
 
     @property
     def _connection_string(self) -> str:
-        server = self._config.server
-        port = f":{server.port}" if server.port else ""
-        return "mssql+pymssql://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        return build_url(self._config.server, "mssql+pymssql")
 
     def collect_metadata(self) -> Database:
         database = Database(str(self._config.server.dbname or ""))
@@ -84,9 +77,7 @@ class MSSQLSourceReader:
 
     def _read_schemas(self, database: Database) -> None:
         try:
-            r: engine.Result[Any] = self._ensure_session().execute(
-                text(
-                    """
+            r: engine.Result[Any] = self._ensure_session().execute(text("""
 SELECT SCHEMA_NAME
 FROM
     INFORMATION_SCHEMA.SCHEMATA s
@@ -97,9 +88,7 @@ WHERE EXISTS(
 )
 ORDER BY
     SCHEMA_NAME
-"""
-                )
-            )
+"""))
         except Exception as exc:
             raise SourceReaderError(f"Error connecting to database {exc}") from exc
 
@@ -107,9 +96,7 @@ ORDER BY
             database.add_schema(Schema(row.SCHEMA_NAME))
 
     def _read_tables(self, database: Database) -> None:
-        r: engine.Result[Any] = self._ensure_session().execute(
-            text(
-                """
+        r: engine.Result[Any] = self._ensure_session().execute(text("""
 SELECT TABLE_SCHEMA, TABLE_NAME
 FROM
     information_schema.tables
@@ -118,16 +105,12 @@ WHERE
     AND TABLE_NAME NOT IN ('dtproperties', 'sysdiagrams')
 ORDER BY
     TABLE_SCHEMA, TABLE_NAME
-"""
-            )
-        )
+"""))
         for row in r:
             database.add_table(row.TABLE_SCHEMA, Table(row.TABLE_NAME))
 
     def _read_columns(self, database: Database) -> None:
-        r: engine.Result[Any] = self._ensure_session().execute(
-            text(
-                """
+        r: engine.Result[Any] = self._ensure_session().execute(text("""
 SELECT
     TABLE_SCHEMA,
     TABLE_NAME,
@@ -142,9 +125,7 @@ FROM
     INFORMATION_SCHEMA.COLUMNS
 ORDER BY
     TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
-"""
-            )
-        )
+"""))
 
         for row in r:
             table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
@@ -162,18 +143,14 @@ ORDER BY
                 )
 
     def _read_computed_columns(self, database: Database) -> None:
-        r: engine.Result[Any] = self._ensure_session().execute(
-            text(
-                """
+        r: engine.Result[Any] = self._ensure_session().execute(text("""
 SELECT S.NAME TABLE_SCHEMA, T.NAME TABLE_NAME, C.NAME COLUMN_NAME, C.DEFINITION
 FROM SYS.COMPUTED_COLUMNS C
 INNER JOIN SYS.TABLES T
   ON T.OBJECT_ID = C.OBJECT_ID
 INNER JOIN SYS.SCHEMAS S
   ON S.SCHEMA_ID = T.SCHEMA_ID
-        """
-            )
-        )
+        """))
 
         for row in r:
             table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
@@ -183,9 +160,7 @@ INNER JOIN SYS.SCHEMAS S
                     column.computed_definition = row.DEFINITION
 
     def _read_identity_columns(self, database: Database) -> None:
-        r: engine.Result[Any] = self._ensure_session().execute(
-            text(
-                """
+        r: engine.Result[Any] = self._ensure_session().execute(text("""
 SELECT s.name TABLE_SCHEMA,
     o.name TABLE_NAME,
     c.name COLUMN_NAME
@@ -196,9 +171,7 @@ FROM sys.identity_columns c
         ON o.schema_id = s.schema_id
 WHERE s.name NOT IN ('sys')
 ORDER BY 1, 2, 3
-        """
-            )
-        )
+        """))
 
         for row in r:
             table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
@@ -208,18 +181,14 @@ ORDER BY 1, 2, 3
                     column.identity = True
 
     def _read_column_constraints(self, database: Database) -> None:
-        r: engine.Result[Any] = self._ensure_session().execute(
-            text(
-                """
+        r: engine.Result[Any] = self._ensure_session().execute(text("""
 SELECT u.TABLE_SCHEMA, u.TABLE_NAME, u.COLUMN_NAME, c.CONSTRAINT_TYPE
 FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE u
 INNER JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS c
   ON  c.CONSTRAINT_NAME = u.CONSTRAINT_NAME
   AND c.CONSTRAINT_SCHEMA = u.CONSTRAINT_SCHEMA
 WHERE c.CONSTRAINT_TYPE IN ('UNIQUE', 'PRIMARY KEY')
-        """
-            )
-        )
+        """))
 
         for row in r:
             table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
@@ -229,9 +198,7 @@ WHERE c.CONSTRAINT_TYPE IN ('UNIQUE', 'PRIMARY KEY')
                     column.constraint = row.CONSTRAINT_TYPE
 
     def _read_foreign_keys(self, database: Database) -> None:
-        r: engine.Result[Any] = self._ensure_session().execute(
-            text(
-                """
+        r: engine.Result[Any] = self._ensure_session().execute(text("""
 SELECT KCU1.CONSTRAINT_SCHEMA AS CONSTRAINT_SCHEMA,
   KCU1.CONSTRAINT_NAME AS CONSTRAINT_NAME,
   KCU1.TABLE_SCHEMA AS TABLE_SCHEMA,
@@ -255,9 +222,7 @@ JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE KCU2
 WHERE KCU1.ORDINAL_POSITION = KCU2.ORDINAL_POSITION
   AND KCU1.TABLE_SCHEMA not in ('sys', 'guest', 'information_schema')
 ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
-        """
-            )
-        )
+        """))
 
         for row in r:
             table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
@@ -271,9 +236,7 @@ ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
                     )
 
     def _read_indexes(self, database: Database) -> None:
-        r: engine.Result[Any] = self._ensure_session().execute(
-            text(
-                """
+        r: engine.Result[Any] = self._ensure_session().execute(text("""
 SELECT sch.name as TABLE_SCHEMA,
      t.name as TABLE_NAME,
      ind.name as INDEX_NAME,
@@ -297,9 +260,7 @@ WHERE ind.is_primary_key = 0
   AND t.is_ms_shipped = 0
   AND sch.name not in ('sys', 'guest', 'information_schema')
 ORDER BY t.name, ind.name, ind.index_id, ic.index_column_id
-        """
-            )
-        )
+        """))
 
         for row in r:
             table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)

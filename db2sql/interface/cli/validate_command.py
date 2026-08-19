@@ -185,7 +185,8 @@ def _print_plan(
             limit_str = "all rows" if limit < 0 else f"≤ {limit} rows"
             count_str = ""
             if with_counts:
-                count_str = f", count={_count_rows(reader, schema_name, schema.tables[table_name], limit, logger)}"
+                count = _count_rows(reader, schema_name, schema.tables[table_name], limit, logger)
+                count_str = f", count={count}"
             logger.info(f"  - {table_name} (format={fmt}, {limit_str}{count_str})")
 
 
@@ -206,7 +207,7 @@ def _count_rows(
         for total, _ in enumerate(reader.iter_rows(schema, table, limit=limit), start=1):
             pass
         return str(total)
-    except Exception as exc:  # pragma: no cover - reader-specific failure
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # pragma: no cover
         logger.warning(f"could not count rows for {schema}.{getattr(table, 'name', '?')}: {exc}")
         return "?"
 

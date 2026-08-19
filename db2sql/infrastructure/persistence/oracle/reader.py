@@ -12,6 +12,7 @@ from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.url import build_url, redact_url
 
 
 def _normalize_oracle_type(raw: str) -> str:
@@ -91,7 +92,7 @@ class OracleSourceReader:
 
     def _ensure_session(self) -> Session:
         if self._session is None:
-            self._logger.info(f"set connection to {self._connection_string}")
+            self._logger.info(f"set connection to {redact_url(self._connection_string)}")
             self._engine = create_engine(self._connection_string)
             self._session = sessionmaker(bind=self._engine)()
         return self._session
@@ -100,16 +101,11 @@ class OracleSourceReader:
     def _connection_string(self) -> str:
         server = self._config.server
         options = server.options or {}
-        driver = options.get("driver", "oracledb")
-        port = f":{server.port}" if server.port else ""
-        userinfo = "{}:{}".format(server.username or "", server.password or "")
-        host = server.hostname or ""
+        scheme = f"oracle+{options.get('driver', 'oracledb')}"
         service_name = options.get("service_name")
-        sid = options.get("sid")
         if service_name:
-            return f"oracle+{driver}://{userinfo}@{host}{port}/?service_name={service_name}"
-        target = sid or server.dbname or ""
-        return f"oracle+{driver}://{userinfo}@{host}{port}/{target}"
+            return build_url(server, scheme, database="", query={"service_name": service_name})
+        return build_url(server, scheme, database=options.get("sid") or server.dbname or "")
 
     @property
     def _schema_filter(self) -> Optional[str]:
@@ -150,7 +146,7 @@ class OracleSourceReader:
         owner = self._schema_filter
         params: Dict[str, Any] = {}
         if owner:
-            query = "SELECT DISTINCT OWNER FROM ALL_TABLES " "WHERE OWNER = :owner ORDER BY OWNER"
+            query = "SELECT DISTINCT OWNER FROM ALL_TABLES WHERE OWNER = :owner ORDER BY OWNER"
             params["owner"] = owner
         else:
             query = (
@@ -342,7 +338,7 @@ class OracleSourceReader:
                 ),
                 params,
             )
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             return
         for row in rows:
             table = database.get_table(row.owner, row.table_name)

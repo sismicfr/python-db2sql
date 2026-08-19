@@ -146,6 +146,16 @@ Connection parameters for the source database.
    * - ``dbname``
      - ``null``
      - Database name (or SQLite file path).
+   * - ``dsn``
+     - ``null``
+     - Full SQLAlchemy URL for the source, e.g.
+       ``postgresql+psycopg2://user:pwd@host:5432/db?sslmode=require``. It
+       **replaces** ``hostname``, ``port``, ``username``, ``password`` and
+       ``dbname`` rather than merging with them, and its dialect must match
+       ``driver``. Declaring it alongside any of those keys **in the same
+       file** is rejected as a contradiction; overriding a file's connection
+       with ``--source-dsn`` on the command line remains valid. See
+       :option:`--source-dsn`.
    * - ``options``
      - ``{}``
      - Driver-specific extra options passed as key/value pairs
@@ -184,6 +194,12 @@ override the corresponding fields here, which in turn override the
    * - ``dbname``
      - ``null``
      - Target database name.
+   * - ``dsn``
+     - ``null``
+     - Full SQLAlchemy URL for the target. Same semantics as ``server.dsn``:
+       it replaces the discrete fields above, its dialect must match
+       ``target``, and combining it with those fields in the same file is
+       rejected. See :option:`--target-dsn`.
    * - ``options``
      - ``{}``
      - Driver-specific extra options for the target connection.
@@ -269,7 +285,11 @@ dump
    * - ``preserve_case``
      - ``false``
      - Preserve identifier case as-is.  When ``false``, identifiers are
-       converted to ``snake_case``.
+       converted to ``snake_case`` — acronym runs stay glued
+       (``HTTPServer`` → ``http_server``, ``UserID`` → ``user_id``) and
+       all-caps names collapse to a single word
+       (``MYTABLE`` → ``mytable``).  See :option:`--preserve-case` for
+       the full table of examples.
    * - ``limit_records``
      - ``-1``
      - Maximum rows per table.  ``-1`` means no limit.
@@ -471,7 +491,7 @@ Recipes
 
 Each recipe below is a complete, copy-pasteable config file.  Drop it as
 ``db2sql.yml`` in the current directory (or pass it with ``-C path.yml``)
-and run ``db2sql -f dump.sql``.
+and run ``db2sql dump -f dump.sql``.
 
 SQLite → Postgres
 ~~~~~~~~~~~~~~~~~
@@ -642,7 +662,8 @@ Oracle connections are configured almost entirely through
      preserve_case: false
      default_data_format: copy
      mapping_schemas:
-       HR: hr           # rewrite Oracle's upper-case owner to snake_case
+       HR: human_resources  # optional rename; snake_case normalization
+                            # alone would already produce "hr"
 
 Oracle → MSSQL
 ~~~~~~~~~~~~~~

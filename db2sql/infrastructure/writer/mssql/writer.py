@@ -19,6 +19,7 @@ from sqlalchemy.engine import Connection, Engine
 from db2sql.application.ports import Logger
 from db2sql.domain.model import Table
 from db2sql.infrastructure.config import AppConfig
+from db2sql.infrastructure.url import build_url, redact_url
 from db2sql.infrastructure.writer.errors import (
     TargetWriterConnectionError,
     TargetWriterExecutionError,
@@ -128,27 +129,13 @@ class MssqlTargetWriter:
 
     @property
     def _connection_string(self) -> str:
-        server = self._config.target_server
-        port = f":{server.port}" if server.port else ""
-        return "mssql+pymssql://{}:{}@{}{}/{}".format(
-            server.username or "",
-            server.password or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        return build_url(self._config.target_server, "mssql+pymssql")
 
     @property
     def _connection_string_redacted(self) -> str:
-        server = self._config.target_server
-        port = f":{server.port}" if server.port else ""
-        return "mssql+pymssql://{}@{}{}/{}".format(
-            server.username or "",
-            server.hostname or "",
-            port,
-            server.dbname or "",
-        )
+        return redact_url(self._connection_string)
 
     @staticmethod
     def _quote_ident(name: str) -> str:
-        return "[{}]".format(name.replace("]", "]]"))
+        escaped = name.replace("]", "]]")
+        return f"[{escaped}]"

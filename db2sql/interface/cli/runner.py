@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import getpass
+import signal
 import sys
 import traceback
 from typing import Any, List, Optional, Union
@@ -86,17 +87,39 @@ class Cli:
                     }
                 )
 
+            self._warn_about_shadowed_fields(options.config)
+
             if getattr(options, "command", None) == COMMAND_MIGRATE:
                 target_driver = getattr(options, "target_driver", None)
                 self._execute_migrate(options.config, target_driver)
                 return SUCCESS
 
+            # Either an explicit COMMAND_DUMP or no subcommand at all: dump is
+            # the default command, so both land here.
             self._execute(options.config)
         except Exception as exc:
             if not isinstance(exc, AbortExecution):
                 self._logger.trace_exception(exc)
             raise exc
         return SUCCESS
+
+    def _warn_about_shadowed_fields(self, config: AppConfig) -> None:
+        """Tell the user which connection settings a DSN is making irrelevant.
+
+        A DSN replaces the connection wholesale rather than merging with the
+        discrete flags, so leftovers from a config file or an environment
+        variable would otherwise be dropped without a word.
+        """
+        for label, server in (
+            ("--source-dsn", config.server),
+            ("--target-dsn", config.target_server),
+        ):
+            shadowed = server.fields_shadowed_by_dsn()
+            if shadowed:
+                self._logger.warning(
+                    f"{label} is set: ignoring {', '.join(shadowed)} "
+                    f"(a DSN replaces the connection, it does not merge with it)"
+                )
 
     def _execute(self, config: AppConfig) -> None:
         reader = get_source_reader(config.driver, config, self._logger)
@@ -147,7 +170,9 @@ class Cli:
                 )
                 use_case.execute()
 
-    def exit_code_from(self, exception: Optional[BaseException]) -> ExitCode:
+    def exit_code_from(  # pylint: disable=too-many-return-statements
+        self, exception: Optional[BaseException]
+    ) -> ExitCode:
         logger = self._logger
         if exception is None:
             return SUCCESS
@@ -159,22 +184,10 @@ class Cli:
         if isinstance(exception, ConfigError):
             logger.error(exception.message)
             return ERROR_INVALID_CONFIGURATION
-        if isinstance(exception, UnknownReaderError):
+        if isinstance(exception, (UnknownReaderError, UnknownEmitterError, UnknownWriterError)):
             logger.error(str(exception))
             return ERROR_INVALID_CONFIGURATION
-        if isinstance(exception, UnknownEmitterError):
-            logger.error(str(exception))
-            return ERROR_INVALID_CONFIGURATION
-        if isinstance(exception, UnknownWriterError):
-            logger.error(str(exception))
-            return ERROR_INVALID_CONFIGURATION
-        if isinstance(exception, SourceReaderError):
-            logger.error(exception.message)
-            return ERROR_GENERAL
-        if isinstance(exception, TargetWriterError):
-            logger.error(exception.message)
-            return ERROR_GENERAL
-        if isinstance(exception, DomainError):
+        if isinstance(exception, (SourceReaderError, TargetWriterError, DomainError)):
             logger.error(exception.message)
             return ERROR_GENERAL
         if isinstance(exception, SystemExit):
@@ -185,14 +198,12 @@ class Cli:
         logger.error(traceback.format_exc())
         try:
             logger.error(str(exception))
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             logger.error(repr(exception))
         return ERROR_UNEXPECTED
 
 
 def main(args: Optional[List[str]] = None) -> ExitCode:
-    import signal
-
     def ctrl_c_handler(_signo: Any, _frame: Any) -> None:
         print("You pressed Ctrl+C!")
         sys.exit(2)
@@ -216,6 +227,6 @@ def main(args: Optional[List[str]] = None) -> ExitCode:
         result = cli.run(args if args is not None else sys.argv[1:])
         if result is not None and result != SUCCESS:
             error = result
-    except BaseException as exc:
+    except BaseException as exc:  # pylint: disable=broad-exception-caught
         error = cli.exit_code_from(exc)
     return error

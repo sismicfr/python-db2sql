@@ -32,7 +32,7 @@ def init_colorama(stream: object) -> None:
             colorama.init()
 
 
-class Palette:
+class Palette:  # pylint: disable=too-few-public-methods
     """Wrapper around colorama colors."""
 
     RED = Fore.RED

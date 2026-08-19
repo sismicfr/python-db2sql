@@ -83,7 +83,7 @@ jobs:
 
       - name: Run python-semantic-release
         id: release
-        uses: python-semantic-release/python-semantic-release@v9
+        uses: python-semantic-release/python-semantic-release@v10
         with:
           github_token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           # An empty `force` means "auto-derive from Conventional Commits".
@@ -130,7 +130,7 @@ jobs:
     permissions:
       id-token: write   # OIDC token used by trusted publishing
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist

@@ -66,7 +66,7 @@ class ConsoleLogger:
             raise InvalidLogLevel(level_name) from exc
         stream: IO[str]
         if log_file:
-            stream = open(
+            stream = open(  # pylint: disable=consider-using-with
                 log_file, "wt", encoding="utf-8"
             )  # noqa: SIM115 — owned for process lifetime
         else:

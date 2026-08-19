@@ -2,11 +2,44 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from db2sql.application.ports import OutputSink
 from db2sql.domain.model import Column, Database, Schema, Table
 from db2sql.domain.policy import drop_order, normalize_identifier, topological_order
+
+# Source-side scalar functions that have no PG equivalent under the same name.
+# Keys are lowercased, parens stripped; values are PG expressions to substitute.
+# Matched regardless of whether the source wrote them with empty parens
+# (``getdate()``) or as bare keywords (Oracle ``SYSDATE``).
+_DEFAULT_FUNCTION_MAP: Dict[str, str] = {
+    # MSSQL date/time
+    "getdate": "now()",
+    "sysdatetime": "LOCALTIMESTAMP",
+    "getutcdate": "(now() AT TIME ZONE 'utc')",
+    "sysutcdatetime": "(now() AT TIME ZONE 'utc')",
+    "sysdatetimeoffset": "now()",
+    # Oracle date/time (bare keywords, no parens)
+    "sysdate": "now()",
+    "systimestamp": "now()",
+    # MSSQL / Oracle / MySQL uuid generators
+    "newid": "gen_random_uuid()",
+    "newsequentialid": "gen_random_uuid()",
+    "sys_guid": "gen_random_uuid()",
+    "uuid": "gen_random_uuid()",
+    # Session info — MSSQL / Oracle
+    "suser_sname": "CURRENT_USER",
+    "system_user": "CURRENT_USER",
+    "user_name": "CURRENT_USER",
+    "user": "CURRENT_USER",
+    "db_name": "current_database()",
+}
+
+_UNICODE_STRING_RE = re.compile(r"(?i)\bN'")
+_FUNCTION_CALL_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*$")
+# MySQL ``bit`` default literal — ``b'0'`` / ``b'1'``.
+_MYSQL_BIT_RE = re.compile(r"^(?i:b)'([01]+)'$")
 
 
 class PostgresSqlEmitter:
@@ -90,7 +123,8 @@ class PostgresSqlEmitter:
 
     def quote_identifier(self, name: str) -> str:
         normalized = self._normalize(name)
-        return '"{}"'.format(normalized.replace('"', '""'))
+        escaped = normalized.replace('"', '""')
+        return f'"{escaped}"'
 
     def schema_name(self, schema: Schema) -> str:
         mapped = self._schema_mapping.get(schema.name, schema.name)
@@ -118,8 +152,56 @@ class PostgresSqlEmitter:
         if not column.nullable and not column.identity:
             parts.append("NOT NULL")
         if column.default is not None and not column.identity:
-            parts.append(f"DEFAULT {column.default}")
+            parts.append(f"DEFAULT {self._translate_default(column.default, target_type)}")
         return " ".join(parts)
+
+    @staticmethod
+    def _strip_wrapping_parens(expr: str) -> str:
+        # MSSQL wraps every default in at least one extra pair of parens
+        # (``((0))``, ``(getdate())``, ``(N'foo')``). Peel only when the outer
+        # pair encloses the whole expression — leave ``(1)+(2)`` alone.
+        expr = expr.strip()
+        while expr.startswith("(") and expr.endswith(")"):
+            depth = 0
+            balanced = True
+            for index, ch in enumerate(expr):
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0 and index != len(expr) - 1:
+                        balanced = False
+                        break
+            if not balanced:
+                break
+            expr = expr[1:-1].strip()
+        return expr
+
+    def _translate_default(self, raw: str, target_type: str) -> str:
+        expr = self._strip_wrapping_parens(raw)
+
+        # ``N'foo'`` → ``'foo'``. PG has no N-prefixed string literal; strings
+        # are already unicode-capable.
+        expr = _UNICODE_STRING_RE.sub("'", expr)
+
+        # ``0`` / ``1`` → ``FALSE`` / ``TRUE`` when the column maps to boolean
+        # (MSSQL ``bit`` becomes PG ``boolean`` and PG won't coerce int→bool
+        # inside a DEFAULT clause). MySQL ``bit`` defaults arrive as ``b'1'``.
+        if target_type == "boolean":
+            if expr in ("0", "1"):
+                return "FALSE" if expr == "0" else "TRUE"
+            bit_match = _MYSQL_BIT_RE.match(expr)
+            if bit_match:
+                return "FALSE" if int(bit_match.group(1), 2) == 0 else "TRUE"
+
+        match = _FUNCTION_CALL_RE.match(expr)
+        if match:
+            fn = match.group(1).lower()
+            replacement = _DEFAULT_FUNCTION_MAP.get(fn)
+            if replacement is not None:
+                return replacement
+
+        return expr
 
     # ---- emit -------------------------------------------------------------
 

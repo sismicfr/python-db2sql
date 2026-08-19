@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Any, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 from db2sql import const
 from db2sql.application.dto import DataFormat
 from db2sql.infrastructure.config import (
     AppConfig,
     ConfigError,
+    ConfigInvalidError,
     load_config,
     merge_cli_overrides,
 )
@@ -25,6 +26,7 @@ from .boolean_action import BooleanAction
 from .once_argument import OnceArgument
 from .smart_formatter import SmartFormatter
 
+COMMAND_DUMP = "dump"
 COMMAND_INIT = "init"
 COMMAND_VALIDATE = "validate"
 COMMAND_MIGRATE = "migrate"
@@ -46,10 +48,84 @@ class CommandLineError(Exception):
         self.message = message
 
 
+_SOURCE_CONNECTION_FLAGS = (
+    "-H",
+    "--host",
+    "-P",
+    "--port",
+    "-d",
+    "--dbname",
+    "-u",
+    "--username",
+    "-p",
+    "--password",
+    "-W",
+    "--ask-password",
+)
+
+_TARGET_CONNECTION_FLAGS = (
+    "--target-host",
+    "--target-port",
+    "--target-dbname",
+    "--target-user",
+    "--target-password",
+)
+
+
+def _flags_used(argv: Sequence[str], flags: Sequence[str]) -> List[str]:
+    """Return which of ``flags`` appear in ``argv``, in declaration order.
+
+    Recognises the three spellings argparse accepts: the bare flag, the
+    ``--long=value`` form, and a short flag with its value attached
+    (``-Hhost``). An exotic spelling that slips through simply falls back to
+    the runtime warning instead of raising — better to miss a conflict than
+    to reject a valid command line.
+    """
+    used = []
+    for flag in flags:
+        is_short = len(flag) == 2 and not flag.startswith("--")
+        for token in argv:
+            attached = is_short and token.startswith(flag) and len(token) > len(flag)
+            if token == flag or token.startswith(f"{flag}=") or attached:
+                used.append(flag)
+                break
+    return used
+
+
 class MsDumpToPGArgumentParser(argparse.ArgumentParser):
     """Builds an :class:`AppConfig` from CLI args + config file + env."""
 
+    def _reject_dsn_conflicts(self, argv: Sequence[str]) -> None:
+        """Refuse a DSN and discrete connection flags on the same command line.
+
+        A DSN replaces the connection rather than merging with it, so passing
+        both expresses two contradictory intents. Only same-command-line
+        conflicts are rejected here: a DSN overriding a host that came from a
+        config file or the environment is the documented precedence at work,
+        and the runner merely warns about it.
+
+        Raises :class:`ConfigInvalidError` rather than calling
+        :meth:`argparse.ArgumentParser.error` so that a contradictory
+        connection exits with the same code as its config-file equivalent.
+        """
+        if "-h" in argv or "--help" in argv:
+            return
+        for dsn_flag, connection_flags in (
+            ("--source-dsn", _SOURCE_CONNECTION_FLAGS),
+            ("--target-dsn", _TARGET_CONNECTION_FLAGS),
+        ):
+            if not _flags_used(argv, [dsn_flag]):
+                continue
+            conflicting = _flags_used(argv, connection_flags)
+            if conflicting:
+                raise ConfigInvalidError(
+                    f"{dsn_flag} cannot be combined with {', '.join(conflicting)}: a DSN "
+                    f"replaces the connection, it does not merge with it. Pass either the "
+                    f"DSN or the individual flags."
+                )
+
     def parse_args_with_config(self, args: Optional[Sequence[str]] = None) -> argparse.Namespace:
+        self._reject_dsn_conflicts(list(args) if args is not None else sys.argv[1:])
         options = super().parse_args(args)
 
         if "help" in options and options.help:
@@ -117,18 +193,88 @@ def _parse_size(value: str) -> int:
     return bytes_value
 
 
-def _add_dump_options(parser: argparse.ArgumentParser) -> None:
-    """Add the connection/dump options shared by the implicit dump command."""
+def _value(default: Any, *, defaults: bool) -> Any:
+    """Return ``default`` for the canonical parser, ``SUPPRESS`` for the aliases.
+
+    Every option is declared twice: once on the root parser (legacy implicit
+    dump, keeps its real default) and once on the subcommand that owns it. The
+    subcommand copy must default to :data:`argparse.SUPPRESS` so argparse omits
+    it from the sub-namespace when the flag is absent — otherwise the value
+    parsed before the subcommand would be clobbered by the subparser default.
+    """
+    return default if defaults else argparse.SUPPRESS
+
+
+def _text(help_text: str, *, visible: bool) -> str:
+    """Hide the help of the legacy root-level aliases without disabling them."""
+    return help_text if visible else argparse.SUPPRESS
+
+
+def _add_common_options(
+    parser: argparse.ArgumentParser, *, defaults: bool = True, visible: bool = True
+) -> None:
+    """Add the options that apply to every command (config, logging, version)."""
+    parser.add_argument(
+        "-C",
+        "--config-file",
+        metavar="PATH",
+        dest="config_file",
+        type=str,
+        default=_value(None, defaults=defaults),
+        help=_text(
+            f"Configuration file to use. [env var: {const.ENV_DB2SQL_CONFIG}]",
+            visible=visible,
+        ),
+    )
+    parser.add_argument(
+        "-L",
+        "--log-file",
+        metavar="PATH",
+        dest="log_file",
+        type=str,
+        default=_value(None, defaults=defaults),
+        help=_text("Send log output to PATH instead of stdout.", visible=visible),
+        action=OnceArgument,
+    )
+    parser.add_argument(
+        "-V",
+        "--verbosity",
+        metavar="LEVEL",
+        dest="verbosity",
+        default=_value("status", defaults=defaults),
+        nargs="?",
+        type=str,
+        help=_text(
+            "Level of detail of the output. Valid options from less verbose to "
+            "more verbose: -Vquiet, -Verror, -Vwarning, -Vnotice, -Vstatus, "
+            "-V or -Vverbose, -VV or -Vdebug, -VVV or -Vtrace",
+            visible=visible,
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        dest="version",
+        action="store_true",
+        default=_value(False, defaults=defaults),
+        help=_text("Output version information and exit.", visible=visible),
+    )
+
+
+def _add_source_options(
+    parser: argparse.ArgumentParser, *, defaults: bool = True, visible: bool = True
+) -> None:
+    """Add the source-connection options shared by dump, migrate and validate."""
     parser.add_argument(
         "--driver",
         dest="driver",
         metavar="NAME",
         type=str,
-        default=os.getenv(const.ENV_DB2SQL_DRIVER),
-        help=(
+        default=_value(os.getenv(const.ENV_DB2SQL_DRIVER), defaults=defaults),
+        help=_text(
             "Source database driver. Built-in: "
             f"{', '.join(available_readers()) or '(none registered)'}. "
-            f"[env var: {const.ENV_DB2SQL_DRIVER}]"
+            f"[env var: {const.ENV_DB2SQL_DRIVER}]",
+            visible=visible,
         ),
         action=OnceArgument,
     )
@@ -137,11 +283,12 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         dest="target",
         metavar="NAME",
         type=str,
-        default=os.getenv(const.ENV_DB2SQL_TARGET),
-        help=(
+        default=_value(os.getenv(const.ENV_DB2SQL_TARGET), defaults=defaults),
+        help=_text(
             "Target SQL dialect to emit. Built-in: "
             f"{', '.join(available_emitters()) or '(none registered)'}. "
-            f"[env var: {const.ENV_DB2SQL_TARGET}] (default: postgres)"
+            f"[env var: {const.ENV_DB2SQL_TARGET}] (default: postgres)",
+            visible=visible,
         ),
         action=OnceArgument,
     )
@@ -151,8 +298,11 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         metavar="HOSTNAME",
         dest="hostname",
         type=str,
-        help=f"Database server host name. [env var: {const.ENV_DB2SQL_HOST}]",
-        default=os.getenv(const.ENV_DB2SQL_HOST),
+        help=_text(
+            f"Database server host name. [env var: {const.ENV_DB2SQL_HOST}]",
+            visible=visible,
+        ),
+        default=_value(os.getenv(const.ENV_DB2SQL_HOST), defaults=defaults),
         action=OnceArgument,
     )
     parser.add_argument(
@@ -161,8 +311,11 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         metavar="PORT",
         dest="port",
         type=int,
-        help=f"Database server port. [env var: {const.ENV_DB2SQL_PORT}]",
-        default=os.getenv(const.ENV_DB2SQL_PORT),
+        help=_text(
+            f"Database server port. [env var: {const.ENV_DB2SQL_PORT}]",
+            visible=visible,
+        ),
+        default=_value(os.getenv(const.ENV_DB2SQL_PORT), defaults=defaults),
         action=OnceArgument,
     )
     parser.add_argument(
@@ -171,8 +324,11 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         metavar="DBNAME",
         dest="dbname",
         type=str,
-        help=f"Database name to connect to. [env var: {const.ENV_DB2SQL_DBNAME}]",
-        default=os.getenv(const.ENV_DB2SQL_DBNAME),
+        help=_text(
+            f"Database name to connect to. [env var: {const.ENV_DB2SQL_DBNAME}]",
+            visible=visible,
+        ),
+        default=_value(os.getenv(const.ENV_DB2SQL_DBNAME), defaults=defaults),
         action=OnceArgument,
     )
     parser.add_argument(
@@ -181,8 +337,11 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         metavar="USERNAME",
         dest="username",
         type=str,
-        help=f"Database user name. [env var: {const.ENV_DB2SQL_USER}]",
-        default=os.getenv(const.ENV_DB2SQL_USER),
+        help=_text(
+            f"Database user name. [env var: {const.ENV_DB2SQL_USER}]",
+            visible=visible,
+        ),
+        default=_value(os.getenv(const.ENV_DB2SQL_USER), defaults=defaults),
         action=OnceArgument,
     )
     parser.add_argument(
@@ -191,8 +350,11 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         metavar="PASSWORD",
         dest="password",
         type=str,
-        help=f"Database password. [env var: {const.ENV_DB2SQL_PASSWORD}]",
-        default=os.getenv(const.ENV_DB2SQL_PASSWORD),
+        help=_text(
+            f"Database password. [env var: {const.ENV_DB2SQL_PASSWORD}]",
+            visible=visible,
+        ),
+        default=_value(os.getenv(const.ENV_DB2SQL_PASSWORD), defaults=defaults),
         action=OnceArgument,
     )
     parser.add_argument(
@@ -200,57 +362,46 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         "--ask-password",
         dest="ask_password",
         action="store_true",
-        default=False,
-        help="Force password prompt.",
+        default=_value(False, defaults=defaults),
+        help=_text("Force password prompt.", visible=visible),
     )
     parser.add_argument(
-        "-f",
-        "--file",
-        metavar="PATH",
-        dest="output_file_name",
+        "--source-dsn",
+        dest="dsn",
+        metavar="URL",
         type=str,
-        default=None,
-        help="Output file. If not provided, script is printed to standard output.",
-    )
-    parser.add_argument(
-        "--split-size",
-        metavar="SIZE",
-        dest="split_size",
-        type=_parse_size,
-        default=None,
-        help=(
-            "Split the dump into multiple files when the current file exceeds "
-            "SIZE. Accepts a byte count or a suffixed value (K/M/G). Requires -f."
+        default=_value(os.getenv(const.ENV_DB2SQL_SOURCE_DSN), defaults=defaults),
+        help=_text(
+            "Full SQLAlchemy URL for the source, e.g. "
+            "'postgresql+psycopg2://user:pwd@host:5432/db?sslmode=require'. "
+            "Replaces --host/--port/--dbname/--username/--password entirely "
+            "and is the only way to pass driver-specific parameters. The URL "
+            "dialect must match --driver. Prefer the environment variable: a "
+            "DSN on the command line is visible in 'ps'. "
+            f"[env var: {const.ENV_DB2SQL_SOURCE_DSN}]",
+            visible=visible,
         ),
+        action=OnceArgument,
     )
-    parser.add_argument(
-        "--on-existing",
-        dest="dump_on_existing",
-        choices=["fail", "drop", "truncate"],
-        default=None,
-        help=(
-            "Strategy when a target object already exists: 'fail' (default) "
-            "emits CREATE only; 'drop' prepends a DROP TABLE IF EXISTS for "
-            "every table in reverse-dependency order; 'truncate' emits a "
-            "data-only script (TRUNCATE + reload, no DDL)."
-        ),
-    )
+
+
+def _add_selection_options(
+    parser: argparse.ArgumentParser, *, defaults: bool = True, visible: bool = True
+) -> None:
+    """Add the options that shape *what* is exported.
+
+    These are shared by ``dump`` and ``migrate``: both paths feed the same
+    :class:`DumpOptions` / :class:`FilterRules` so the emitted DDL stays
+    identical, and by ``validate --dry-run`` so the printed plan matches.
+    """
     parser.add_argument(
         "--preserve-case",
         dest="preserve_case",
         action=BooleanAction,
-        default=None,
-        help="Preserve identifier case. When disabled, names are converted to snake_case.",
-    )
-    parser.add_argument(
-        "--transaction",
-        dest="dump_use_transaction",
-        action=BooleanAction,
-        default=None,
-        help=(
-            "Wrap the dump in a transaction (BEGIN/COMMIT). Disable with "
-            "--no-transaction when the SQL is consumed by a tool that manages "
-            "its own transaction or when chunked replay is preferred."
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Preserve identifier case. When disabled, names are converted to snake_case.",
+            visible=visible,
         ),
     )
     parser.add_argument(
@@ -258,15 +409,21 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         "--max-records",
         dest="limit_records",
         type=int,
-        default=None,
-        help="Limit the number of rows from each table. -1 means no limit.",
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Limit the number of rows from each table. -1 means no limit.",
+            visible=visible,
+        ),
     )
     parser.add_argument(
         "--data-format",
         dest="data_format",
         choices=[fmt.value for fmt in DataFormat],
-        default=None,
-        help="Default output format for table data: copy (faster) or insert.",
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Default output format for table data: copy (faster) or insert.",
+            visible=visible,
+        ),
     )
     parser.add_argument(
         "-i",
@@ -276,8 +433,11 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         type=str,
         action="append",
         nargs="+",
-        default=None,
-        help="Schema names to include during export (repeatable, comma separated).",
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Schema names to include during export (repeatable, comma separated).",
+            visible=visible,
+        ),
     )
     parser.add_argument(
         "-x",
@@ -287,8 +447,11 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         type=str,
         action="append",
         nargs="+",
-        default=None,
-        help="Schema names to exclude during export (repeatable, comma separated).",
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Schema names to exclude during export (repeatable, comma separated).",
+            visible=visible,
+        ),
     )
     parser.add_argument(
         "-I",
@@ -298,8 +461,11 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         type=str,
         action="append",
         nargs="+",
-        default=None,
-        help="Table names to include during export (repeatable, comma separated).",
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Table names to include during export (repeatable, comma separated).",
+            visible=visible,
+        ),
     )
     parser.add_argument(
         "-X",
@@ -309,47 +475,92 @@ def _add_dump_options(parser: argparse.ArgumentParser) -> None:
         type=str,
         action="append",
         nargs="+",
-        default=None,
-        help="Table names to exclude during export (repeatable, comma separated).",
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Table names to exclude during export (repeatable, comma separated).",
+            visible=visible,
+        ),
     )
+
+
+def _add_dump_options(
+    parser: argparse.ArgumentParser, *, defaults: bool = True, visible: bool = True
+) -> None:
+    """Add the options that only make sense when writing a SQL file."""
     parser.add_argument(
-        "-C",
-        "--config-file",
+        "-f",
+        "--file",
         metavar="PATH",
-        dest="config_file",
+        dest="output_file_name",
         type=str,
-        help=f"Configuration file to use. [env var: {const.ENV_DB2SQL_CONFIG}]",
-    )
-    parser.add_argument(
-        "-L",
-        "--log-file",
-        metavar="PATH",
-        dest="log_file",
-        type=str,
-        help="Send log output to PATH instead of stdout.",
-        action=OnceArgument,
-    )
-    parser.add_argument(
-        "-V",
-        "--verbosity",
-        metavar="LEVEL",
-        dest="verbosity",
-        default="status",
-        nargs="?",
-        type=str,
-        help=(
-            "Level of detail of the output. Valid options from less verbose to "
-            "more verbose: -Vquiet, -Verror, -Vwarning, -Vnotice, -Vstatus, "
-            "-V or -Vverbose, -VV or -Vdebug, -VVV or -Vtrace"
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Output file. If not provided, script is printed to standard output.",
+            visible=visible,
         ),
     )
     parser.add_argument(
-        "--version",
-        dest="version",
-        action="store_true",
-        default=False,
-        help="Output version information and exit.",
+        "--split-size",
+        metavar="SIZE",
+        dest="split_size",
+        type=_parse_size,
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Split the dump into multiple files when the current file exceeds "
+            "SIZE. Accepts a byte count or a suffixed value (K/M/G). Requires -f.",
+            visible=visible,
+        ),
     )
+    parser.add_argument(
+        "--on-existing",
+        dest="dump_on_existing",
+        choices=["fail", "drop", "truncate"],
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Strategy when a target object already exists: 'fail' (default) "
+            "emits CREATE only; 'drop' prepends a DROP TABLE IF EXISTS for "
+            "every table in reverse-dependency order; 'truncate' emits a "
+            "data-only script (TRUNCATE + reload, no DDL).",
+            visible=visible,
+        ),
+    )
+    parser.add_argument(
+        "--transaction",
+        dest="dump_use_transaction",
+        action=BooleanAction,
+        default=_value(None, defaults=defaults),
+        help=_text(
+            "Wrap the dump in a transaction (BEGIN/COMMIT). Disable with "
+            "--no-transaction when the SQL is consumed by a tool that manages "
+            "its own transaction or when chunked replay is preferred.",
+            visible=visible,
+        ),
+    )
+
+
+def _add_dump_subparser(subparsers: Any) -> None:
+    """Add the ``dump`` subcommand that writes SQL to a file or stdout.
+
+    ``dump`` is also the default command: invoking ``db2sql`` with dump options
+    but no subcommand behaves identically. The explicit form is the documented
+    one — it keeps the four commands symmetric and gives the dump options a
+    help page of their own.
+    """
+    dump_parser = subparsers.add_parser(
+        COMMAND_DUMP,
+        help="Write the source database as a SQL script (default command).",
+        description=(
+            "Read metadata and rows from the source database and write a SQL "
+            "script for the dialect selected by --target, either to a file "
+            "(-f) or to standard output. This is the default command: running "
+            "'db2sql' with no subcommand runs 'db2sql dump'."
+        ),
+        formatter_class=SmartFormatter,
+    )
+    _add_source_options(dump_parser, defaults=False)
+    _add_selection_options(dump_parser, defaults=False)
+    _add_dump_options(dump_parser, defaults=False)
+    _add_common_options(dump_parser, defaults=False)
 
 
 def _add_validate_subparser(subparsers: Any) -> None:
@@ -402,6 +613,9 @@ def _add_validate_subparser(subparsers: Any) -> None:
             "May be slow on large tables — issues one SELECT per table."
         ),
     )
+    _add_source_options(validate_parser, defaults=False)
+    _add_selection_options(validate_parser, defaults=False)
+    _add_common_options(validate_parser, defaults=False)
 
 
 def _add_migrate_subparser(subparsers: Any) -> None:
@@ -417,11 +631,11 @@ def _add_migrate_subparser(subparsers: Any) -> None:
         help="Stream source database into a live target database (no SQL file).",
         description=(
             "Read metadata and rows from the source database (defined by the "
-            "top-level --driver/-H/-P/... flags) and apply them directly to a "
-            "live target database. The DDL is produced by the same SqlEmitter "
-            "used by the file dump, so the resulting target schema is "
-            "byte-identical to what 'db2sql > dump.sql && psql -f dump.sql' "
-            "would have produced."
+            "--driver/-H/-P/... flags) and apply them directly to a live "
+            "target database. The DDL is produced by the same SqlEmitter used "
+            "by the file dump, so the resulting target schema is "
+            "byte-identical to what 'db2sql dump -f dump.sql && psql -f "
+            "dump.sql' would have produced."
         ),
         formatter_class=SmartFormatter,
     )
@@ -483,6 +697,22 @@ def _add_migrate_subparser(subparsers: Any) -> None:
         action=OnceArgument,
     )
     migrate_parser.add_argument(
+        "--target-dsn",
+        dest="target_dsn",
+        metavar="URL",
+        type=str,
+        default=os.getenv(const.ENV_DB2SQL_TARGET_DSN),
+        help=(
+            "Full SQLAlchemy URL for the target. Replaces every other "
+            "--target-host/--target-port/--target-dbname/--target-user/"
+            "--target-password flag and must match the --target dialect. "
+            "Prefer the environment variable: a DSN on the command line is "
+            "visible in 'ps'. "
+            f"[env var: {const.ENV_DB2SQL_TARGET_DSN}]"
+        ),
+        action=OnceArgument,
+    )
+    migrate_parser.add_argument(
         "--on-existing",
         dest="on_existing",
         choices=["fail", "drop", "truncate"],
@@ -514,6 +744,9 @@ def _add_migrate_subparser(subparsers: Any) -> None:
             "statement."
         ),
     )
+    _add_source_options(migrate_parser, defaults=False)
+    _add_selection_options(migrate_parser, defaults=False)
+    _add_common_options(migrate_parser, defaults=False)
 
 
 def _add_init_subparser(subparsers: Any) -> None:
@@ -548,20 +781,30 @@ def _add_init_subparser(subparsers: Any) -> None:
 def build_parser() -> MsDumpToPGArgumentParser:
     parser = MsDumpToPGArgumentParser(
         description=(
-            "Dump any supported source database into a PostgreSQL or Microsoft "
-            "SQL Server SQL file (selectable via --target)."
+            "Move any supported source database into a PostgreSQL or Microsoft "
+            "SQL Server target (selectable via --target): 'dump' writes a SQL "
+            "script, 'migrate' applies it to a live database. Running db2sql "
+            "with no COMMAND is a shorthand for 'db2sql dump'."
         ),
         prog="db2sql",
         formatter_class=SmartFormatter,
         add_help=True,
     )
-    _add_dump_options(parser)
+    _add_common_options(parser)
+
+    # The dump options are also accepted directly on the root parser so the
+    # pre-subcommand form ('db2sql --driver sqlite -f out.sql') keeps working.
+    # Their help is suppressed: 'db2sql dump --help' is the documented page.
+    _add_source_options(parser, visible=False)
+    _add_selection_options(parser, visible=False)
+    _add_dump_options(parser, visible=False)
 
     subparsers = parser.add_subparsers(
         dest="command",
         title="Commands",
         metavar="COMMAND",
     )
+    _add_dump_subparser(subparsers)
     _add_init_subparser(subparsers)
     _add_validate_subparser(subparsers)
     _add_migrate_subparser(subparsers)
