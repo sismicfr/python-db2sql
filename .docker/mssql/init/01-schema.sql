@@ -100,6 +100,25 @@ GO
 CREATE INDEX idx_book_title ON apptest.book (title);
 GO
 
+-- Composite primary key + composite foreign key: the reader must keep the two
+-- columns in one constraint, otherwise each half points at a non-unique key.
+CREATE TABLE apptest.assembly (
+    id      INT NOT NULL,
+    cetat   CHAR(1) NOT NULL,
+    label   NVARCHAR(50),
+    CONSTRAINT pk_assembly PRIMARY KEY (id, cetat)
+);
+GO
+
+CREATE TABLE apptest.assembly_vote (
+    id           INT IDENTITY(1,1) PRIMARY KEY,
+    assembly_id  INT NOT NULL,
+    cetat        CHAR(1) NOT NULL,
+    CONSTRAINT fk_vote_assembly FOREIGN KEY (assembly_id, cetat)
+        REFERENCES apptest.assembly (id, cetat)
+);
+GO
+
 -- Representative payload
 INSERT INTO apptest.type_matrix
     (c_bit, c_tinyint, c_smallint, c_int, c_bigint,
@@ -132,4 +151,7 @@ GO
 INSERT INTO apptest.book (author_id, title) VALUES (1, N'First');
 INSERT INTO apptest.book (author_id, title) VALUES (1, N'Second''s ride');
 INSERT INTO apptest.book (author_id, title) VALUES (2, N'Bob book');
+
+INSERT INTO apptest.assembly (id, cetat, label) VALUES (1, 'O', N'AG 2024');
+INSERT INTO apptest.assembly_vote (assembly_id, cetat) VALUES (1, 'O');
 GO

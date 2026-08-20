@@ -62,6 +62,24 @@ CREATE TABLE book (
 
 CREATE INDEX idx_book_title ON book (title);
 
+-- Composite primary key + composite foreign key: the reader must keep the two
+-- columns in one constraint, otherwise each half points at a non-unique key.
+CREATE TABLE assembly (
+    id      INT NOT NULL,
+    cetat   CHAR(1) NOT NULL,
+    label   VARCHAR(50),
+    PRIMARY KEY (id, cetat)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE assembly_vote (
+    id           INT NOT NULL AUTO_INCREMENT,
+    assembly_id  INT NOT NULL,
+    cetat        CHAR(1) NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vote_assembly FOREIGN KEY (assembly_id, cetat)
+        REFERENCES assembly (id, cetat)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Representative payload (one populated row + one all-NULL row)
 INSERT INTO type_matrix
     (c_bit, c_tinyint, c_smallint, c_mediumint, c_int, c_bigint,
@@ -88,3 +106,6 @@ INSERT INTO author (name, birth_year) VALUES ('Bob', NULL);
 INSERT INTO book (author_id, title) VALUES (1, 'First');
 INSERT INTO book (author_id, title) VALUES (1, 'Second\'s ride');
 INSERT INTO book (author_id, title) VALUES (2, 'Bob book');
+
+INSERT INTO assembly (id, cetat, label) VALUES (1, 'O', 'AG 2024');
+INSERT INTO assembly_vote (assembly_id, cetat) VALUES (1, 'O');
