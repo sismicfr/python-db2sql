@@ -119,10 +119,19 @@ def test_mssql_computed_column_detected(mssql_metadata) -> None:
 def test_mssql_foreign_key_and_index(mssql_metadata) -> None:
     book = mssql_metadata.schemas["apptest"].get_table("book")
     assert book is not None
-    assert book.columns["author_id"].foreign_key is not None
-    fk = book.columns["author_id"].foreign_key
-    assert (fk.schema, fk.table, fk.column) == ("apptest", "author", "id")
+    (fk,) = book.foreign_keys
+    assert (fk.schema, fk.table) == ("apptest", "author")
+    assert (fk.columns, fk.ref_columns) == (("author_id",), ("id",))
     assert any("title" in cols for cols in book.indexes.values())
+
+
+def test_mssql_composite_foreign_key_stays_one_constraint(mssql_metadata) -> None:
+    vote = mssql_metadata.schemas["apptest"].get_table("assembly_vote")
+    assert vote is not None
+    (fk,) = vote.foreign_keys
+    assert (fk.schema, fk.table) == ("apptest", "assembly")
+    assert fk.columns == ("assembly_id", "cetat")
+    assert fk.ref_columns == ("id", "cetat")
 
 
 # --------------------------------------------------------------------------- #

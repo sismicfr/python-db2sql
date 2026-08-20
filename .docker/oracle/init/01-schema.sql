@@ -71,6 +71,26 @@ CREATE TABLE book (
 CREATE INDEX idx_book_title ON book (title);
 
 -- ---------------------------------------------------------------------------
+-- Composite primary key + composite foreign key. The reader has to keep the
+-- two columns in one constraint: emitted separately, each half would point at
+-- a non-unique key and the target would reject the DDL.
+-- ---------------------------------------------------------------------------
+CREATE TABLE assembly (
+    id      NUMBER NOT NULL,
+    cetat   CHAR(1) NOT NULL,
+    label   VARCHAR2(50),
+    CONSTRAINT pk_assembly PRIMARY KEY (id, cetat)
+);
+
+CREATE TABLE assembly_vote (
+    id           NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    assembly_id  NUMBER NOT NULL,
+    cetat        CHAR(1) NOT NULL,
+    CONSTRAINT fk_vote_assembly FOREIGN KEY (assembly_id, cetat)
+        REFERENCES assembly (id, cetat)
+);
+
+-- ---------------------------------------------------------------------------
 -- Representative payload (one populated row + one all-NULL row)
 -- ---------------------------------------------------------------------------
 INSERT INTO type_matrix (
@@ -113,5 +133,8 @@ INSERT INTO author (name, birth_year) VALUES ('Bob', NULL);
 INSERT INTO book (author_id, title) VALUES (1, 'First');
 INSERT INTO book (author_id, title) VALUES (1, 'Second''s ride');
 INSERT INTO book (author_id, title) VALUES (2, 'Bob book');
+
+INSERT INTO assembly (id, cetat, label) VALUES (1, 'O', 'AG 2024');
+INSERT INTO assembly_vote (assembly_id, cetat) VALUES (1, 'O');
 
 COMMIT;

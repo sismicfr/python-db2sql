@@ -64,6 +64,28 @@ def _populated_session() -> FakeSession:
                 NUMERIC_PRECISION=10,
                 NUMERIC_SCALE=0,
             ),
+            FakeRow(
+                TABLE_SCHEMA="dbo",
+                TABLE_NAME="Customer",
+                COLUMN_NAME="State",
+                COLUMN_DEFAULT=None,
+                IS_NULLABLE="NO",
+                DATA_TYPE="char",
+                CHARACTER_MAXIMUM_LENGTH=1,
+                NUMERIC_PRECISION=None,
+                NUMERIC_SCALE=None,
+            ),
+            FakeRow(
+                TABLE_SCHEMA="dbo",
+                TABLE_NAME="Order",
+                COLUMN_NAME="State",
+                COLUMN_DEFAULT=None,
+                IS_NULLABLE="NO",
+                DATA_TYPE="char",
+                CHARACTER_MAXIMUM_LENGTH=1,
+                NUMERIC_PRECISION=None,
+                NUMERIC_SCALE=None,
+            ),
             # Belongs to a table we never collected — must be ignored
             FakeRow(
                 TABLE_SCHEMA="dbo",
@@ -139,6 +161,17 @@ def _populated_session() -> FakeSession:
             FakeRow(
                 TABLE_SCHEMA="dbo",
                 TABLE_NAME="Order",
+                CONSTRAINT_NAME="FK_Order_Customer",
+                COLUMN_NAME="CustomerId",
+                UNIQUE_TABLE_SCHEMA="dbo",
+                UNIQUE_TABLE_NAME="Customer",
+                UNIQUE_COLUMN_NAME="Id",
+            ),
+            # Composite constraint: two rows, one per column, same name
+            FakeRow(
+                TABLE_SCHEMA="dbo",
+                TABLE_NAME="Order",
+                CONSTRAINT_NAME="FK_Order_Customer_State",
                 COLUMN_NAME="CustomerId",
                 UNIQUE_TABLE_SCHEMA="dbo",
                 UNIQUE_TABLE_NAME="Customer",
@@ -147,6 +180,16 @@ def _populated_session() -> FakeSession:
             FakeRow(
                 TABLE_SCHEMA="dbo",
                 TABLE_NAME="Order",
+                CONSTRAINT_NAME="FK_Order_Customer_State",
+                COLUMN_NAME="State",
+                UNIQUE_TABLE_SCHEMA="dbo",
+                UNIQUE_TABLE_NAME="Customer",
+                UNIQUE_COLUMN_NAME="State",
+            ),
+            FakeRow(
+                TABLE_SCHEMA="dbo",
+                TABLE_NAME="Order",
+                CONSTRAINT_NAME="FK_Order_Missing",
                 COLUMN_NAME="Missing",
                 UNIQUE_TABLE_SCHEMA="dbo",
                 UNIQUE_TABLE_NAME="Customer",
@@ -155,6 +198,7 @@ def _populated_session() -> FakeSession:
             FakeRow(
                 TABLE_SCHEMA="dbo",
                 TABLE_NAME="Phantom",
+                CONSTRAINT_NAME="FK_Phantom",
                 COLUMN_NAME="X",
                 UNIQUE_TABLE_SCHEMA="dbo",
                 UNIQUE_TABLE_NAME="Customer",
@@ -212,9 +256,13 @@ def test_collect_metadata_collects_everything() -> None:
     assert customer.columns["Id"].constraint == "PRIMARY KEY"
     assert customer.columns["Id"].computed_definition == "([Id]+1)"
     order = db.schemas["dbo"].tables["Order"]
-    fk = order.columns["CustomerId"].foreign_key
-    assert fk is not None
-    assert (fk.schema, fk.table, fk.column) == ("dbo", "Customer", "Id")
+    simple, composite = order.foreign_keys
+    assert (simple.schema, simple.table) == ("dbo", "Customer")
+    assert (simple.columns, simple.ref_columns) == (("CustomerId",), ("Id",))
+    assert (composite.columns, composite.ref_columns) == (
+        ("CustomerId", "State"),
+        ("Id", "State"),
+    )
     assert order.indexes == {"idx_order_cust": ["CustomerId"]}
 
 

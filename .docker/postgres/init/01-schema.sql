@@ -60,6 +60,23 @@ CREATE TABLE apptest.book (
 
 CREATE INDEX idx_book_title ON apptest.book (title);
 
+-- Composite primary key + composite foreign key: the reader must keep the two
+-- columns in one constraint, otherwise each half points at a non-unique key.
+CREATE TABLE apptest.assembly (
+    id      INTEGER NOT NULL,
+    cetat   CHAR(1) NOT NULL,
+    label   VARCHAR(50),
+    CONSTRAINT pk_assembly PRIMARY KEY (id, cetat)
+);
+
+CREATE TABLE apptest.assembly_vote (
+    id           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    assembly_id  INTEGER NOT NULL,
+    cetat        CHAR(1) NOT NULL,
+    CONSTRAINT fk_vote_assembly FOREIGN KEY (assembly_id, cetat)
+        REFERENCES apptest.assembly (id, cetat)
+);
+
 -- Representative payload (one populated row + one all-NULL row)
 INSERT INTO apptest.type_matrix
     (c_boolean, c_smallint, c_integer, c_bigint,
@@ -89,5 +106,8 @@ INSERT INTO apptest.author (name, birth_year) VALUES ('Bob', NULL);
 INSERT INTO apptest.book (author_id, title) VALUES (1, 'First');
 INSERT INTO apptest.book (author_id, title) VALUES (1, 'Second''s ride');
 INSERT INTO apptest.book (author_id, title) VALUES (2, 'Bob book');
+
+INSERT INTO apptest.assembly (id, cetat, label) VALUES (1, 'O', 'AG 2024');
+INSERT INTO apptest.assembly_vote (assembly_id, cetat) VALUES (1, 'O');
 
 SELECT 'postgres apptest fixture loaded' AS status;

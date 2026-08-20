@@ -104,10 +104,19 @@ def test_postgres_identity_and_pk(postgres_metadata) -> None:
 def test_postgres_foreign_key_and_index(postgres_metadata) -> None:
     book = postgres_metadata.schemas["apptest"].get_table("book")
     assert book is not None
-    fk = book.columns["author_id"].foreign_key
-    assert fk is not None
-    assert (fk.schema, fk.table, fk.column) == ("apptest", "author", "id")
+    (fk,) = book.foreign_keys
+    assert (fk.schema, fk.table) == ("apptest", "author")
+    assert (fk.columns, fk.ref_columns) == (("author_id",), ("id",))
     assert any("title" in cols for cols in book.indexes.values())
+
+
+def test_postgres_composite_foreign_key_stays_one_constraint(postgres_metadata) -> None:
+    vote = postgres_metadata.schemas["apptest"].get_table("assembly_vote")
+    assert vote is not None
+    (fk,) = vote.foreign_keys
+    assert (fk.schema, fk.table) == ("apptest", "assembly")
+    assert fk.columns == ("assembly_id", "cetat")
+    assert fk.ref_columns == ("id", "cetat")
 
 
 # ---------------------------------------------------------------------------

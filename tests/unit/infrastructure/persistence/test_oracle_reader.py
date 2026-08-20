@@ -92,6 +92,7 @@ def _full_plan() -> FakeSession:
             FakeRow(
                 owner="HR",
                 table_name="EMP",
+                constraint_name="FK_EMP_DEPT",
                 column_name="DEPT_ID",
                 position=1,
                 ref_owner="HR",
@@ -174,13 +175,70 @@ def test_collect_metadata_builds_full_database() -> None:
     # Oracle DATE includes time component → normalized to timestamp.
     assert hired_col.type == "timestamp"
 
-    dept_col = table.get_column("DEPT_ID")
-    assert dept_col is not None
-    fk = dept_col.foreign_key
-    assert fk is not None
-    assert (fk.schema, fk.table, fk.column) == ("HR", "DEPT", "ID")
+    assert table.get_column("DEPT_ID") is not None
+    (fk,) = table.foreign_keys
+    assert (fk.schema, fk.table) == ("HR", "DEPT")
+    assert (fk.columns, fk.ref_columns) == (("DEPT_ID",), ("ID",))
+    assert fk.name == "FK_EMP_DEPT"
 
     assert table.indexes.get("IDX_EMP_NAME") == ["NAME"]
+
+
+def test_composite_foreign_key_is_collected_as_one_constraint() -> None:
+    """Two rows sharing a constraint name make one two-column FK, in POSITION order."""
+    reader = _build_reader()
+    session = FakeSession()
+    session.add("DISTINCT OWNER FROM ALL_TABLES", [FakeRow(owner="HR")])
+    session.add("FROM ALL_TABLES t", [FakeRow(owner="HR", table_name="VOTE")])
+    session.add(
+        "FROM ALL_TAB_COLUMNS",
+        [
+            FakeRow(
+                owner="HR",
+                table_name="VOTE",
+                column_name=name,
+                data_default=None,
+                nullable="N",
+                data_type="NUMBER",
+                data_length=22,
+                char_length=0,
+                data_precision=10,
+                data_scale=0,
+            )
+            for name in ("CONVOQUE_ID", "STATE")
+        ],
+    )
+    session.add(
+        "c.CONSTRAINT_TYPE = 'R'",
+        [
+            FakeRow(
+                owner="HR",
+                table_name="VOTE",
+                constraint_name="FK_VOTE_CONVOQUE",
+                column_name="CONVOQUE_ID",
+                position=1,
+                ref_owner="HR",
+                ref_table="CONVOQUE",
+                ref_column="ID",
+            ),
+            FakeRow(
+                owner="HR",
+                table_name="VOTE",
+                constraint_name="FK_VOTE_CONVOQUE",
+                column_name="STATE",
+                position=2,
+                ref_owner="HR",
+                ref_table="CONVOQUE",
+                ref_column="STATE",
+            ),
+        ],
+    )
+    install_fake_session(reader, session)
+
+    vote = reader.collect_metadata().schemas["HR"].tables["VOTE"]
+    (fk,) = vote.foreign_keys
+    assert fk.columns == ("CONVOQUE_ID", "STATE")
+    assert fk.ref_columns == ("ID", "STATE")
 
 
 def test_owner_option_constrains_schema_filter() -> None:
@@ -372,6 +430,7 @@ def test_collect_metadata_skips_rows_for_missing_columns_and_tables() -> None:
             _FakeRow(
                 owner="HR",
                 table_name="EMP",
+                constraint_name="FK_EMP_MISSING",
                 column_name="MISSING",
                 position=1,
                 ref_owner="HR",
@@ -381,6 +440,7 @@ def test_collect_metadata_skips_rows_for_missing_columns_and_tables() -> None:
             _FakeRow(
                 owner="HR",
                 table_name="GHOST",
+                constraint_name="FK_GHOST",
                 column_name="X",
                 position=1,
                 ref_owner="HR",
@@ -402,6 +462,8 @@ def test_collect_metadata_skips_rows_for_missing_columns_and_tables() -> None:
     assert emp.columns["MEMO"].char_length == -1
     # The MISSING column was never added
     assert "MISSING" not in emp.columns
+    # Both FKs name a column or table that does not exist — neither is kept
+    assert emp.foreign_keys == []
 
 
 def test_collect_metadata_wraps_unexpected_exception_post_schemas() -> None:

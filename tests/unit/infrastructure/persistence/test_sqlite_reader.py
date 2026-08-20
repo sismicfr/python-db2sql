@@ -168,8 +168,56 @@ def test_collect_metadata_ignores_fk_pointing_to_unknown_column() -> None:
     db = reader.collect_metadata()
     # The dangling FK source column is silently ignored
     table = db.schemas["public"].tables["t"]
-    assert table.columns["id"].foreign_key is None
+    assert table.foreign_keys == []
 
+
+
+def test_collect_metadata_groups_simple_and_composite_foreign_keys() -> None:
+    """PRAGMA lists one row per column; `id` says which constraint they belong to."""
+    reader = SQLiteSourceReader(_config(dbname=":memory:"), _Logger())
+    session = FakeSession()
+
+    def _execute(query, _params=None):
+        query = str(query)
+        if "FROM sqlite_master" in query:
+            return FakeResult([("vote",)])
+        if "table_info" in query:
+            return FakeResult(
+                [
+                    (0, "id", "INTEGER", 1, None, 1),
+                    (1, "convoque_id", "INTEGER", 1, None, 0),
+                    (2, "state", "TEXT", 1, None, 0),
+                ]
+            )
+        if "index_list" in query:
+            return FakeResult([])
+        if "foreign_key_list" in query:
+            # id, seq, ref_table, src_col, ref_col, ...
+            # Constraint 1 comes back with its columns out of order on purpose.
+            return FakeResult(
+                [
+                    (0, 0, "author", "convoque_id", "id", "NO ACTION", "NO ACTION", "NONE"),
+                    (1, 1, "convoque", "state", "state", "NO ACTION", "NO ACTION", "NONE"),
+                    (1, 0, "convoque", "convoque_id", "id", "NO ACTION", "NO ACTION", "NONE"),
+                ]
+            )
+        return FakeResult([])
+
+    session.execute = _execute  # type: ignore[assignment]
+    install_fake_session(reader, session)
+
+    vote = reader.collect_metadata().schemas["public"].tables["vote"]
+    simple, composite = vote.foreign_keys
+    assert (simple.table, simple.columns, simple.ref_columns) == (
+        "author",
+        ("convoque_id",),
+        ("id",),
+    )
+    assert (composite.table, composite.columns, composite.ref_columns) == (
+        "convoque",
+        ("convoque_id", "state"),
+        ("id", "state"),
+    )
 
 def test_iter_rows_quotes_columns_and_table() -> None:
     reader = SQLiteSourceReader(_config(dbname=":memory:"), _Logger())

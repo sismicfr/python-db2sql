@@ -102,7 +102,16 @@ def test_mysql_identity_and_pk(mysql_metadata) -> None:
 def test_mysql_foreign_key_and_index(mysql_metadata) -> None:
     book = mysql_metadata.schemas["db2sqltest"].get_table("book")
     assert book is not None
-    fk = book.columns["author_id"].foreign_key
-    assert fk is not None
-    assert (fk.schema, fk.table, fk.column) == ("db2sqltest", "author", "id")
+    (fk,) = book.foreign_keys
+    assert (fk.schema, fk.table) == ("db2sqltest", "author")
+    assert (fk.columns, fk.ref_columns) == (("author_id",), ("id",))
     assert any("title" in cols for cols in book.indexes.values())
+
+
+def test_mysql_composite_foreign_key_stays_one_constraint(mysql_metadata) -> None:
+    vote = mysql_metadata.schemas["db2sqltest"].get_table("assembly_vote")
+    assert vote is not None
+    (fk,) = vote.foreign_keys
+    assert (fk.schema, fk.table) == ("db2sqltest", "assembly")
+    assert fk.columns == ("assembly_id", "cetat")
+    assert fk.ref_columns == ("id", "cetat")

@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from .foreign_key import ForeignKey
-
 
 @dataclass
 class Column:
@@ -22,7 +20,6 @@ class Column:
     computed_definition: Optional[str] = None
     identity: bool = False
     constraint: Optional[str] = None
-    foreign_key: Optional[ForeignKey] = None
 
     @property
     def is_primary_key(self) -> bool:

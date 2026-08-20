@@ -55,6 +55,7 @@ def test_oracle_schema_and_tables(oracle_metadata) -> None:
     assert "APPTEST" in oracle_metadata.schemas
     schema = oracle_metadata.schemas["APPTEST"]
     assert {"TYPE_MATRIX", "TYPE_LONG", "AUTHOR", "BOOK"}.issubset(schema.tables.keys())
+    assert {"ASSEMBLY", "ASSEMBLY_VOTE"}.issubset(schema.tables.keys())
 
 
 def test_oracle_type_matrix_columns_present(oracle_metadata) -> None:
@@ -97,7 +98,16 @@ def test_oracle_identity_and_pk(oracle_metadata) -> None:
 def test_oracle_foreign_key_and_index(oracle_metadata) -> None:
     book = oracle_metadata.schemas["APPTEST"].get_table("BOOK")
     assert book is not None
-    fk = book.columns["AUTHOR_ID"].foreign_key
-    assert fk is not None
-    assert (fk.schema, fk.table, fk.column) == ("APPTEST", "AUTHOR", "ID")
+    (fk,) = book.foreign_keys
+    assert (fk.schema, fk.table) == ("APPTEST", "AUTHOR")
+    assert (fk.columns, fk.ref_columns) == (("AUTHOR_ID",), ("ID",))
     assert any("TITLE" in cols for cols in book.indexes.values())
+
+
+def test_oracle_composite_foreign_key_stays_one_constraint(oracle_metadata) -> None:
+    vote = oracle_metadata.schemas["APPTEST"].get_table("ASSEMBLY_VOTE")
+    assert vote is not None
+    (fk,) = vote.foreign_keys
+    assert (fk.schema, fk.table) == ("APPTEST", "ASSEMBLY")
+    assert fk.columns == ("ASSEMBLY_ID", "CETAT")
+    assert fk.ref_columns == ("ID", "CETAT")

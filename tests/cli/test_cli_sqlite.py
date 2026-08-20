@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -26,6 +27,10 @@ def test_cli_main_end_to_end(sample_db: Path, tmp_path: Path, monkeypatch) -> No
     contents = output_file.read_text()
     assert "BEGIN;" in contents and "COMMIT;" in contents
     assert 'COPY "public"."book"' in contents
+    assert (
+        'ALTER TABLE "public"."book" ADD FOREIGN KEY ("author_id") '
+        'REFERENCES "public"."author" ("id");' in contents
+    )
 
 
 def test_cli_no_transaction_omits_begin_and_commit(
@@ -164,3 +169,45 @@ def test_cli_dump_command_accepts_options_before_and_after_the_verb(
     )
     assert rc == 0
     assert 'COPY "public"."book"' in output_file.read_text()
+
+
+def test_cli_emits_composite_foreign_key_as_one_statement(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A two-column FK must stay one constraint.
+
+    Emitted column by column, each half would reference a non-unique key and
+    the target refuses the statement ("no unique constraint matching given
+    keys for referenced table").
+    """
+    db_path = tmp_path / "composite.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE convoque (
+            id INTEGER NOT NULL,
+            state TEXT NOT NULL,
+            name TEXT,
+            PRIMARY KEY (id, state)
+        );
+        CREATE TABLE vote (
+            id INTEGER PRIMARY KEY,
+            convoque_id INTEGER NOT NULL,
+            state TEXT NOT NULL,
+            FOREIGN KEY (convoque_id, state) REFERENCES convoque(id, state)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    output_file = tmp_path / "dump.sql"
+    monkeypatch.setattr(sys, "argv", ["db2sql"])
+    rc = Cli().run(
+        ["--driver", "sqlite", "-d", str(db_path), "--preserve-case", "-f", str(output_file)]
+    )
+    assert rc == 0
+    contents = output_file.read_text()
+    assert contents.count("ADD FOREIGN KEY") == 1
+    assert 'ADD FOREIGN KEY ("convoque_id", "state")' in contents
+    assert 'REFERENCES "public"."convoque" ("id", "state")' in contents

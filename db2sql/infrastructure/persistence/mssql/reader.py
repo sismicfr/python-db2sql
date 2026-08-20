@@ -8,10 +8,14 @@ from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import Column, Database, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.persistence.foreign_keys import (
+    attach_foreign_keys,
+    ForeignKeyColumn,
+)
 from db2sql.infrastructure.url import build_url, redact_url
 
 
@@ -221,19 +225,25 @@ JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE KCU2
   AND KCU2.CONSTRAINT_NAME = RC.UNIQUE_CONSTRAINT_NAME
 WHERE KCU1.ORDINAL_POSITION = KCU2.ORDINAL_POSITION
   AND KCU1.TABLE_SCHEMA not in ('sys', 'guest', 'information_schema')
-ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME, KCU1.ORDINAL_POSITION
         """))
 
-        for row in r:
-            table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
-            if table:
-                column = table.get_column(row.COLUMN_NAME)
-                if column:
-                    column.foreign_key = ForeignKey(
-                        row.UNIQUE_TABLE_SCHEMA,
-                        row.UNIQUE_TABLE_NAME,
-                        row.UNIQUE_COLUMN_NAME,
-                    )
+        attach_foreign_keys(
+            database,
+            (
+                ForeignKeyColumn(
+                    schema=row.TABLE_SCHEMA,
+                    table=row.TABLE_NAME,
+                    key=row.CONSTRAINT_NAME,
+                    column=row.COLUMN_NAME,
+                    ref_schema=row.UNIQUE_TABLE_SCHEMA,
+                    ref_table=row.UNIQUE_TABLE_NAME,
+                    ref_column=row.UNIQUE_COLUMN_NAME,
+                    name=row.CONSTRAINT_NAME,
+                )
+                for row in r
+            ),
+        )
 
     def _read_indexes(self, database: Database) -> None:
         r: engine.Result[Any] = self._ensure_session().execute(text("""

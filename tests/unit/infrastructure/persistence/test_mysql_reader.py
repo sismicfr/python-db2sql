@@ -78,6 +78,28 @@ def _full_plan() -> FakeSession:
                 NUMERIC_SCALE=0,
                 EXTRA="",
             ),
+            FakeRow(
+                TABLE_NAME="author",
+                COLUMN_NAME="state",
+                COLUMN_DEFAULT=None,
+                IS_NULLABLE="NO",
+                DATA_TYPE="char",
+                CHARACTER_MAXIMUM_LENGTH=1,
+                NUMERIC_PRECISION=None,
+                NUMERIC_SCALE=None,
+                EXTRA="",
+            ),
+            FakeRow(
+                TABLE_NAME="book",
+                COLUMN_NAME="state",
+                COLUMN_DEFAULT=None,
+                IS_NULLABLE="NO",
+                DATA_TYPE="char",
+                CHARACTER_MAXIMUM_LENGTH=1,
+                NUMERIC_PRECISION=None,
+                NUMERIC_SCALE=None,
+                EXTRA="",
+            ),
             # Belongs to a missing table — should be ignored gracefully
             FakeRow(
                 TABLE_NAME="ghost",
@@ -104,18 +126,36 @@ def _full_plan() -> FakeSession:
         "REFERENCED_TABLE_NAME IS NOT NULL",
         [
             FakeRow(
+                CONSTRAINT_NAME="fk_book_author",
+                TABLE_NAME="book",
+                COLUMN_NAME="author_id",
+                REFERENCED_TABLE_NAME="author",
+                REFERENCED_COLUMN_NAME="id",
+            ),
+            # Composite constraint: two rows, one per column, same name
+            FakeRow(
+                CONSTRAINT_NAME="fk_book_author_state",
                 TABLE_NAME="book",
                 COLUMN_NAME="author_id",
                 REFERENCED_TABLE_NAME="author",
                 REFERENCED_COLUMN_NAME="id",
             ),
             FakeRow(
+                CONSTRAINT_NAME="fk_book_author_state",
+                TABLE_NAME="book",
+                COLUMN_NAME="state",
+                REFERENCED_TABLE_NAME="author",
+                REFERENCED_COLUMN_NAME="state",
+            ),
+            FakeRow(
+                CONSTRAINT_NAME="fk_book_missing",
                 TABLE_NAME="book",
                 COLUMN_NAME="missing_col",
                 REFERENCED_TABLE_NAME="author",
                 REFERENCED_COLUMN_NAME="id",
             ),
             FakeRow(
+                CONSTRAINT_NAME="fk_ghost",
                 TABLE_NAME="ghost",
                 COLUMN_NAME="x",
                 REFERENCED_TABLE_NAME="author",
@@ -173,11 +213,13 @@ def test_collect_metadata_populates_schema_tables_columns_indexes_fks() -> None:
     assert author.columns["name"].nullable is False
 
     book = schema.tables["book"]
-    fk = book.columns["author_id"].foreign_key
-    assert fk is not None
-    assert fk.schema == "main"
-    assert fk.table == "author"
-    assert fk.column == "id"
+    simple, composite = book.foreign_keys
+    assert (simple.schema, simple.table) == ("main", "author")
+    assert (simple.columns, simple.ref_columns) == (("author_id",), ("id",))
+    assert (composite.columns, composite.ref_columns) == (
+        ("author_id", "state"),
+        ("id", "state"),
+    )
     assert book.indexes == {"idx_book_author": ["author_id"]}
 
 
