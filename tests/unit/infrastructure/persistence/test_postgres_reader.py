@@ -63,6 +63,30 @@ def _populated_session() -> FakeSession:
                 numeric_scale=0,
                 is_identity="NO",
             ),
+            FakeRow(
+                table_schema="public",
+                table_name="author",
+                column_name="state",
+                column_default=None,
+                is_nullable="NO",
+                data_type="character",
+                character_maximum_length=1,
+                numeric_precision=None,
+                numeric_scale=None,
+                is_identity="NO",
+            ),
+            FakeRow(
+                table_schema="public",
+                table_name="book",
+                column_name="state",
+                column_default=None,
+                is_nullable="NO",
+                data_type="character",
+                character_maximum_length=1,
+                numeric_precision=None,
+                numeric_scale=None,
+                is_identity="NO",
+            ),
             # Column for a table the reader never collected
             FakeRow(
                 table_schema="ghost",
@@ -102,15 +126,36 @@ def _populated_session() -> FakeSession:
             FakeRow(
                 table_schema="public",
                 table_name="book",
+                constraint_name="book_author_id_fkey",
                 column_name="author_id",
                 ref_schema="public",
                 ref_table="author",
                 ref_column="id",
             ),
+            # Composite constraint: two rows, one per column, same name
+            FakeRow(
+                table_schema="public",
+                table_name="book",
+                constraint_name="book_author_state_fkey",
+                column_name="author_id",
+                ref_schema="public",
+                ref_table="author",
+                ref_column="id",
+            ),
+            FakeRow(
+                table_schema="public",
+                table_name="book",
+                constraint_name="book_author_state_fkey",
+                column_name="state",
+                ref_schema="public",
+                ref_table="author",
+                ref_column="state",
+            ),
             # column missing → ignored
             FakeRow(
                 table_schema="public",
                 table_name="book",
+                constraint_name="book_zzz_fkey",
                 column_name="zzz",
                 ref_schema="public",
                 ref_table="author",
@@ -120,6 +165,7 @@ def _populated_session() -> FakeSession:
             FakeRow(
                 table_schema="public",
                 table_name="phantom",
+                constraint_name="phantom_x_fkey",
                 column_name="x",
                 ref_schema="public",
                 ref_table="author",
@@ -174,9 +220,13 @@ def test_collect_metadata_populates_all_layers() -> None:
     assert public.tables["author"].columns["id"].identity is True
     assert public.tables["author"].columns["id"].constraint == "PRIMARY KEY"
 
-    fk = public.tables["book"].columns["author_id"].foreign_key
-    assert fk is not None
-    assert (fk.schema, fk.table, fk.column) == ("public", "author", "id")
+    simple, composite = public.tables["book"].foreign_keys
+    assert (simple.schema, simple.table) == ("public", "author")
+    assert (simple.columns, simple.ref_columns) == (("author_id",), ("id",))
+    assert (composite.columns, composite.ref_columns) == (
+        ("author_id", "state"),
+        ("id", "state"),
+    )
     assert public.tables["book"].indexes == {"idx_book_author": ["author_id"]}
 
 

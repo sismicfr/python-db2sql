@@ -8,9 +8,14 @@ from db2sql.domain.policy import drop_order, topological_order
 
 def _table_with_fk(name: str, ref_schema: str, ref_table: str) -> Table:
     table = Table(name=name)
-    table.add_column(
-        Column(name=f"{ref_table}_id", type="int",
-               foreign_key=ForeignKey(schema=ref_schema, table=ref_table, column="id"))
+    table.add_column(Column(name=f"{ref_table}_id", type="int"))
+    table.add_foreign_key(
+        ForeignKey(
+            schema=ref_schema,
+            table=ref_table,
+            columns=(f"{ref_table}_id",),
+            ref_columns=("id",),
+        )
     )
     return table
 

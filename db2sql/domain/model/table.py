@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from db2sql.domain.errors import DuplicatedColumnError
 
 from .column import Column
+from .foreign_key import ForeignKey
 
 
 @dataclass
@@ -17,6 +18,7 @@ class Table:
     name: str
     columns: Dict[str, Column] = field(default_factory=dict)
     indexes: Dict[str, List[str]] = field(default_factory=dict)
+    foreign_keys: List[ForeignKey] = field(default_factory=list)
     source_query: Optional[str] = None
 
     def add_column(self, column: Column) -> None:
@@ -29,6 +31,9 @@ class Table:
 
     def add_index(self, index_name: str, column_name: str) -> None:
         self.indexes.setdefault(index_name, []).append(column_name)
+
+    def add_foreign_key(self, foreign_key: ForeignKey) -> None:
+        self.foreign_keys.append(foreign_key)
 
     def primary_key_columns(self) -> List[str]:
         return [name for name, column in self.columns.items() if column.is_primary_key]

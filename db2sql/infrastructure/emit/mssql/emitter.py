@@ -314,10 +314,7 @@ class MssqlSqlEmitter:
         for schema in database.schemas.values():
             for table in schema.tables.values():
                 qualified = self.table_name(schema, table)
-                for column in table.columns.values():
-                    fk = column.foreign_key
-                    if not fk:
-                        continue
+                for fk in table.foreign_keys:
                     ref_schema = database.schemas.get(fk.schema)
                     if ref_schema is None:
                         continue
@@ -325,11 +322,13 @@ class MssqlSqlEmitter:
                     if ref_table is None:
                         continue
                     ref_qualified = self.table_name(ref_schema, ref_table)
+                    cols = ", ".join(self.quote_identifier(c) for c in fk.columns)
+                    ref_cols = ", ".join(self.quote_identifier(c) for c in fk.ref_columns)
                     sink.write(
                         f"ALTER TABLE {qualified} "
-                        f"ADD FOREIGN KEY ({self.quote_identifier(column.name)}) "
+                        f"ADD FOREIGN KEY ({cols}) "
                         f"REFERENCES {ref_qualified} "
-                        f"({self.quote_identifier(fk.column)});\n"
+                        f"({ref_cols});\n"
                     )
                     sink.boundary()
         sink.write("\n")

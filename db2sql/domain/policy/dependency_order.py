@@ -2,7 +2,7 @@
 
 Used to emit ``DROP TABLE`` statements in an order that respects referential
 integrity without falling back to ``CASCADE``. The order is computed from the
-foreign keys carried on each :class:`~db2sql.domain.model.Column`.
+foreign keys carried on each :class:`~db2sql.domain.model.Table`.
 """
 
 from __future__ import annotations
@@ -37,10 +37,7 @@ def topological_order(database: Database) -> List[TableKey]:
     for schema_name, schema in database.schemas.items():
         for table_name, table in schema.tables.items():
             child = (schema_name, table_name)
-            for column in table.columns.values():
-                fk = column.foreign_key
-                if fk is None:
-                    continue
+            for fk in table.foreign_keys:
                 parent = (fk.schema, fk.table)
                 if parent == child or parent not in known:
                     continue

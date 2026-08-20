@@ -225,9 +225,8 @@ class TestEmitTablesFkIndexes:
         emitter = MssqlSqlEmitter(preserve_case=True)
         db = self._db()
         book = Table(name="book")
-        col = Column(name="author_id", type="int")
-        col.foreign_key = ForeignKey("public", "author", "id")
-        book.add_column(col)
+        book.add_column(Column(name="author_id", type="int"))
+        book.add_foreign_key(ForeignKey("public", "author", ("author_id",), ("id",)))
         db.schemas["public"].add_table(book)
         sink = _Sink()
         emitter.emit_foreign_keys(db, sink)
@@ -239,13 +238,28 @@ class TestEmitTablesFkIndexes:
         emitter = MssqlSqlEmitter(preserve_case=True)
         db = self._db()
         book = Table(name="book")
-        col = Column(name="author_id", type="int")
-        col.foreign_key = ForeignKey("missing", "author", "id")
-        book.add_column(col)
+        book.add_column(Column(name="author_id", type="int"))
+        book.add_foreign_key(ForeignKey("missing", "author", ("author_id",), ("id",)))
         db.schemas["public"].add_table(book)
         sink = _Sink()
         emitter.emit_foreign_keys(db, sink)
         assert "ALTER TABLE" not in sink.text
+
+    def test_emit_foreign_keys_keeps_composite_key_in_one_statement(self) -> None:
+        emitter = MssqlSqlEmitter(preserve_case=True)
+        db = self._db()
+        vote = Table(name="vote")
+        vote.add_column(Column(name="author_id", type="int"))
+        vote.add_column(Column(name="state", type="char"))
+        vote.add_foreign_key(
+            ForeignKey("public", "author", ("author_id", "state"), ("id", "state"))
+        )
+        db.schemas["public"].add_table(vote)
+        sink = _Sink()
+        emitter.emit_foreign_keys(db, sink)
+        assert sink.text.count("ALTER TABLE") == 1
+        assert "ADD FOREIGN KEY ([author_id], [state])" in sink.text
+        assert "REFERENCES [public].[author] ([id], [state])" in sink.text
 
     def test_emit_indexes(self) -> None:
         emitter = MssqlSqlEmitter(preserve_case=True)
@@ -259,8 +273,8 @@ class TestEmitTablesFkIndexes:
         emitter = MssqlSqlEmitter(preserve_case=True)
         db = self._db()
         book = Table(name="book")
-        book.add_column(Column(name="author_id", type="int",
-                               foreign_key=ForeignKey("public", "author", "id")))
+        book.add_column(Column(name="author_id", type="int"))
+        book.add_foreign_key(ForeignKey("public", "author", ("author_id",), ("id",)))
         db.schemas["public"].add_table(book)
         sink = _Sink()
         emitter.emit_drops(db, sink)
@@ -273,8 +287,8 @@ class TestEmitTablesFkIndexes:
         emitter = MssqlSqlEmitter(preserve_case=True)
         db = self._db()
         book = Table(name="book")
-        book.add_column(Column(name="author_id", type="int",
-                               foreign_key=ForeignKey("public", "author", "id")))
+        book.add_column(Column(name="author_id", type="int"))
+        book.add_foreign_key(ForeignKey("public", "author", ("author_id",), ("id",)))
         db.schemas["public"].add_table(book)
         sink = _Sink()
         emitter.emit_truncates(db, sink)

@@ -8,10 +8,14 @@ from sqlalchemy import create_engine, engine, text
 from sqlalchemy.orm.session import Session, sessionmaker
 
 from db2sql.application.ports import Logger
-from db2sql.domain.model import Column, Database, ForeignKey, Schema, Table
+from db2sql.domain.model import Column, Database, Schema, Table
 from db2sql.infrastructure.config import AppConfig
 from db2sql.infrastructure.persistence import query_introspection
 from db2sql.infrastructure.persistence.errors import SourceReaderError
+from db2sql.infrastructure.persistence.foreign_keys import (
+    attach_foreign_keys,
+    ForeignKeyColumn,
+)
 from db2sql.infrastructure.url import build_url, redact_url
 
 
@@ -267,7 +271,8 @@ class OracleSourceReader:
             owner_clause = self._excluded_schemas_sql("c.OWNER")
         rows = self._ensure_session().execute(
             text(
-                "SELECT cc.OWNER, cc.TABLE_NAME, cc.COLUMN_NAME, cc.POSITION, "
+                "SELECT cc.OWNER, cc.TABLE_NAME, cc.CONSTRAINT_NAME, cc.COLUMN_NAME, "
+                "       cc.POSITION, "
                 "       rc.OWNER AS REF_OWNER, rc.TABLE_NAME AS REF_TABLE, "
                 "       rc.COLUMN_NAME AS REF_COLUMN "
                 "FROM ALL_CONSTRAINTS c "
@@ -284,14 +289,22 @@ class OracleSourceReader:
             ),
             params,
         )
-        for row in rows:
-            table = database.get_table(row.owner, row.table_name)
-            if table is None:
-                continue
-            column = table.get_column(row.column_name)
-            if column is None:
-                continue
-            column.foreign_key = ForeignKey(row.ref_owner, row.ref_table, row.ref_column)
+        attach_foreign_keys(
+            database,
+            (
+                ForeignKeyColumn(
+                    schema=row.owner,
+                    table=row.table_name,
+                    key=row.constraint_name,
+                    column=row.column_name,
+                    ref_schema=row.ref_owner,
+                    ref_table=row.ref_table,
+                    ref_column=row.ref_column,
+                    name=row.constraint_name,
+                )
+                for row in rows
+            ),
+        )
 
     def _read_indexes(self, database: Database) -> None:
         owner = self._schema_filter
