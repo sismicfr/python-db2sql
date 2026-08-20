@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.0.0 (2026-08-20)
+
+### Bug Fixes
+
+- Emit composite foreign keys as one constraint, not one per column (#23)
+  ([#23](https://github.com/sismicfr/python-db2sql/pull/23),
+  [`93548d7`](https://github.com/sismicfr/python-db2sql/commit/93548d70f173626b4e663c619a64913d9403e21f))
+
+
 ## v1.1.0 (2026-08-19)
 
 ### Bug Fixes

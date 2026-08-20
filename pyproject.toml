@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "python-db2sql"
-version = "1.1.0"
+version = "2.0.0"
 description = "Dump any supported source database into a PostgreSQL SQL file"
 requires-python = ">=3.9"
 license = { text = "MIT" }
