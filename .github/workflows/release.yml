@@ -57,7 +57,7 @@ jobs:
       version:  ${{ steps.release.outputs.version }}
       tag:      ${{ steps.release.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # PAT is required so that the commit + tag pushed below re-trigger
