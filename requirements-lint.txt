@@ -4,7 +4,7 @@ black==26.5.1
 commitizen==3.31.0
 flake8==7.3.0
 import-linter==2.13
-isort==5.13.2
+isort==9.0.1
 mypy==1.19.1
 pylint==3.3.9
 types-PyYAML==6.0.12.20250915
