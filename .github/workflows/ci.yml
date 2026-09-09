@@ -59,7 +59,7 @@ jobs:
         run: pytest tests/unit tests/cli --cov=db2sql --cov-report=xml --cov-report=term --cov-fail-under=80
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
