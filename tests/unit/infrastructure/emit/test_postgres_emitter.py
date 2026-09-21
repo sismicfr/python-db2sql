@@ -365,3 +365,278 @@ class TestRowFormatting:
         assert "VALUES (1, 'O''Reilly');" in text
         assert "VALUES (2, '\\x00');" in text
         assert "VALUES (3, TRUE);" in text
+
+
+class TestForeignKeyTypeAlignment:
+    """A child column takes the type of the key when PG refuses the pair."""
+
+    @staticmethod
+    def _two_tables(key: Column, child: Column) -> Database:
+        db = Database(name="main")
+        public = Schema(name="public")
+        client = Table(name="client")
+        client.add_column(key)
+        dossier = Table(name="dossier")
+        dossier.add_column(child)
+        dossier.add_foreign_key(ForeignKey("public", "client", (child.name,), (key.name,)))
+        public.add_table(client)
+        public.add_table(dossier)
+        db.add_schema(public)
+        return db
+
+    @staticmethod
+    def _column_line(db: Database, table: str, column: str) -> str:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        sink = _Sink()
+        emitter.emit_tables(db, sink)
+        body = sink.text.split(f'CREATE TABLE "public"."{table}" (')[1].split(");")[0]
+        for line in body.splitlines():
+            stripped = line.strip().rstrip(",")
+            if stripped.startswith(f'"{column}" '):
+                return stripped
+        raise AssertionError(f"no line for {table}.{column} in:\n{sink.text}")
+
+    def _child_line(self, key: Column, child: Column) -> str:
+        return self._column_line(self._two_tables(key, child), "dossier", child.name)
+
+    @pytest.mark.parametrize(
+        "key, child, expected",
+        [
+            # Pairs PG refuses: the child takes the type of the key.
+            pytest.param(
+                Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"),
+                Column(name="client_id", type="varchar", char_length=36, nullable=True),
+                "uuid",
+                id="uuid-key-rejects-varchar",
+            ),
+            pytest.param(
+                Column(name="id", type="int", constraint="PRIMARY KEY"),
+                Column(name="client_id", type="numeric", precision=18, scale=0, nullable=True),
+                "integer",
+                id="integer-key-rejects-numeric",
+            ),
+            pytest.param(
+                Column(name="id", type="bit", constraint="PRIMARY KEY"),
+                Column(name="client_id", type="tinyint", nullable=True),
+                "boolean",
+                id="boolean-key-rejects-smallint",
+            ),
+            pytest.param(
+                Column(name="id", type="int", constraint="PRIMARY KEY"),
+                Column(name="client_id", type="text", nullable=True),
+                "integer",
+                id="integer-key-rejects-text",
+            ),
+            pytest.param(
+                Column(name="id", type="date", constraint="PRIMARY KEY"),
+                Column(name="client_id", type="varchar", char_length=10, nullable=True),
+                "date",
+                id="date-key-rejects-varchar",
+            ),
+            # Pairs PG accepts: the declared type stays.
+            pytest.param(
+                Column(name="id", type="varchar", char_length=60, constraint="PRIMARY KEY"),
+                Column(name="client_id", type="text", nullable=True),
+                "text",
+                id="varchar-key-accepts-text",
+            ),
+            pytest.param(
+                Column(name="id", type="numeric", precision=18, scale=0, constraint="PRIMARY KEY"),
+                Column(name="client_id", type="int", nullable=True),
+                "integer",
+                id="numeric-key-accepts-integer",
+            ),
+            pytest.param(
+                Column(name="id", type="datetime", constraint="PRIMARY KEY"),
+                Column(name="client_id", type="date", nullable=True),
+                "date",
+                id="timestamp-key-accepts-date",
+            ),
+            pytest.param(
+                Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"),
+                Column(name="client_id", type="uniqueidentifier", nullable=True),
+                "uuid",
+                id="uuid-key-accepts-uuid",
+            ),
+            pytest.param(
+                Column(name="id", type="float", constraint="PRIMARY KEY"),
+                Column(name="client_id", type="numeric", precision=10, scale=2, nullable=True),
+                "numeric(10,2)",
+                id="double-key-accepts-numeric",
+            ),
+        ],
+    )
+    def test_child_type_follows_what_the_key_accepts(
+        self, key: Column, child: Column, expected: str
+    ) -> None:
+        assert self._child_line(key, child) == f'"client_id" {expected}'
+
+    @pytest.mark.parametrize(
+        "key_type, child_type, expected",
+        [
+            # A PG source reports canonical spellings the type map leaves
+            # alone; folding them avoids rewriting a column that is already
+            # compatible.
+            ("character varying", "text", "text"),
+            ("int4", "integer", "integer"),
+            ("bpchar", "text", "text"),
+            ("timestamp without time zone", "date", "date"),
+        ],
+    )
+    def test_canonical_postgres_spellings_are_folded(
+        self, key_type: str, child_type: str, expected: str
+    ) -> None:
+        line = self._child_line(
+            Column(name="id", type=key_type, constraint="PRIMARY KEY"),
+            Column(name="client_id", type=child_type, nullable=True),
+        )
+        assert line == f'"client_id" {expected}'
+
+    def test_size_difference_alone_changes_nothing(self) -> None:
+        # PG ignores the declared size: varchar(50) may reference varchar(10).
+        line = self._child_line(
+            Column(name="id", type="varchar", char_length=10, constraint="PRIMARY KEY"),
+            Column(name="client_id", type="varchar", char_length=50, nullable=True),
+        )
+        assert line == '"client_id" varchar(50)'
+
+    @pytest.mark.parametrize("key_type, expected", [("int", "integer"), ("bigint", "bigint")])
+    def test_identity_key_is_referenced_by_its_storage_type(
+        self, key_type: str, expected: str
+    ) -> None:
+        # The key reads serial/bigserial in the DDL, but a column referencing
+        # it must be declared with the underlying integer type.
+        line = self._child_line(
+            Column(name="id", type=key_type, identity=True, constraint="PRIMARY KEY"),
+            Column(name="client_id", type="varchar", char_length=36, nullable=True),
+        )
+        assert line == f'"client_id" {expected}'
+
+    def test_identity_child_is_left_alone(self) -> None:
+        line = self._child_line(
+            Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"),
+            Column(name="client_id", type="int", identity=True),
+        )
+        assert line == '"client_id" serial'
+
+    def test_nullability_and_default_are_kept(self) -> None:
+        db = self._two_tables(
+            Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"),
+            Column(name="client_id", type="varchar", char_length=36, nullable=False),
+        )
+        assert self._column_line(db, "dossier", "client_id") == '"client_id" uuid NOT NULL'
+
+    def test_column_without_foreign_key_is_untouched(self) -> None:
+        db = self._two_tables(
+            Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"),
+            Column(name="client_id", type="varchar", char_length=36, nullable=True),
+        )
+        db.schemas["public"].get_table("dossier").add_column(
+            Column(name="label", type="varchar", char_length=60, nullable=True)
+        )
+        assert self._column_line(db, "dossier", "label") == '"label" varchar(60)'
+
+    @pytest.mark.parametrize(
+        "ref_schema, ref_table, ref_column",
+        [
+            ("missing", "client", "id"),
+            ("public", "missing", "id"),
+            ("public", "client", "missing"),
+        ],
+    )
+    def test_reference_that_resolves_to_nothing_keeps_the_declared_type(
+        self, ref_schema: str, ref_table: str, ref_column: str
+    ) -> None:
+        # A filter may remove the referenced table or column; the declared
+        # type then stays as it is.
+        db = Database(name="main")
+        public = Schema(name="public")
+        client = Table(name="client")
+        client.add_column(Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"))
+        dossier = Table(name="dossier")
+        dossier.add_column(Column(name="client_id", type="varchar", char_length=36, nullable=True))
+        dossier.add_foreign_key(ForeignKey(ref_schema, ref_table, ("client_id",), (ref_column,)))
+        public.add_table(client)
+        public.add_table(dossier)
+        db.add_schema(public)
+        assert self._column_line(db, "dossier", "client_id") == '"client_id" varchar(36)'
+
+    def test_chain_of_three_tables_reaches_the_root_key(self) -> None:
+        db = Database(name="main")
+        public = Schema(name="public")
+        root = Table(name="root")
+        root.add_column(Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"))
+        mid = Table(name="mid")
+        mid.add_column(
+            Column(name="root_id", type="varchar", char_length=36, constraint="PRIMARY KEY")
+        )
+        mid.add_foreign_key(ForeignKey("public", "root", ("root_id",), ("id",)))
+        leaf = Table(name="leaf")
+        leaf.add_column(Column(name="mid_id", type="varchar", char_length=36, nullable=True))
+        leaf.add_foreign_key(ForeignKey("public", "mid", ("mid_id",), ("root_id",)))
+        for table in (root, mid, leaf):
+            public.add_table(table)
+        db.add_schema(public)
+        # Both the middle and the leaf column align on the root key.
+        assert self._column_line(db, "mid", "root_id") == '"root_id" uuid NOT NULL'
+        assert self._column_line(db, "leaf", "mid_id") == '"mid_id" uuid'
+
+    def test_self_referencing_table_terminates(self) -> None:
+        db = Database(name="main")
+        public = Schema(name="public")
+        node = Table(name="node")
+        node.add_column(Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"))
+        node.add_column(Column(name="parent_id", type="varchar", char_length=36, nullable=True))
+        node.add_foreign_key(ForeignKey("public", "node", ("parent_id",), ("id",)))
+        public.add_table(node)
+        db.add_schema(public)
+        assert self._column_line(db, "node", "parent_id") == '"parent_id" uuid'
+
+    def test_cycle_between_two_tables_terminates(self) -> None:
+        db = Database(name="main")
+        public = Schema(name="public")
+        left = Table(name="left")
+        left.add_column(Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"))
+        left.add_foreign_key(ForeignKey("public", "right", ("id",), ("id",)))
+        right = Table(name="right")
+        right.add_column(Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"))
+        right.add_foreign_key(ForeignKey("public", "left", ("id",), ("id",)))
+        public.add_table(left)
+        public.add_table(right)
+        db.add_schema(public)
+        assert self._column_line(db, "left", "id") == '"id" uuid NOT NULL'
+
+    def test_composite_key_aligns_only_the_column_that_needs_it(self) -> None:
+        db = Database(name="main")
+        public = Schema(name="public")
+        client = Table(name="client")
+        client.add_column(Column(name="id", type="uniqueidentifier", constraint="PRIMARY KEY"))
+        client.add_column(
+            Column(name="state", type="char", char_length=2, constraint="PRIMARY KEY")
+        )
+        dossier = Table(name="dossier")
+        dossier.add_column(Column(name="client_id", type="varchar", char_length=36, nullable=True))
+        dossier.add_column(Column(name="state", type="varchar", char_length=2, nullable=True))
+        dossier.add_foreign_key(
+            ForeignKey("public", "client", ("client_id", "state"), ("id", "state"))
+        )
+        public.add_table(client)
+        public.add_table(dossier)
+        db.add_schema(public)
+        assert self._column_line(db, "dossier", "client_id") == '"client_id" uuid'
+        # char and varchar accept each other: this half needs no change.
+        assert self._column_line(db, "dossier", "state") == '"state" varchar(2)'
+
+    def test_boolean_alignment_also_fixes_the_default(self) -> None:
+        # The default is translated against the aligned type, so a source
+        # ``0`` on a bit key becomes FALSE rather than an int PG would refuse.
+        line = self._child_line(
+            Column(name="id", type="bit", constraint="PRIMARY KEY"),
+            Column(name="client_id", type="tinyint", nullable=True, default="0"),
+        )
+        assert line == '"client_id" boolean DEFAULT FALSE'
+
+    def test_column_definition_keeps_its_one_argument_form(self) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        column = Column(name="client_id", type="varchar", char_length=36, nullable=True)
+        assert emitter.column_definition(column) == '"client_id" varchar(36)'

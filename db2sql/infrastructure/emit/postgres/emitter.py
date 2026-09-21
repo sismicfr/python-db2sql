@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, FrozenSet, Iterable, Mapping, Optional, Tuple
 
 from db2sql.application.ports import OutputSink
 from db2sql.domain.model import Column, Database, Schema, Table
@@ -40,6 +40,54 @@ _UNICODE_STRING_RE = re.compile(r"(?i)\bN'")
 _FUNCTION_CALL_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\))?\s*$")
 # MySQL ``bit`` default literal — ``b'0'`` / ``b'1'``.
 _MYSQL_BIT_RE = re.compile(r"^(?i:b)'([01]+)'$")
+
+# ---- foreign key type compatibility ---------------------------------------
+# PG refuses a foreign key whose two sides hold types it cannot compare. The
+# three tables below describe the pairs it accepts; they were probed pair by
+# pair on PG 15. Two results are worth remembering: the declared size plays no
+# part (``varchar(50)`` may reference ``varchar(10)``), and the numeric rule is
+# one way (an ``integer`` column may reference a ``numeric`` key, not the
+# reverse).
+
+# Numeric types, by how much they accept: a key accepts every child of a rank
+# lower than or equal to its own.
+_NUMERIC_RANK: Dict[str, int] = {
+    "smallint": 0,
+    "integer": 0,
+    "bigint": 0,
+    "serial": 0,
+    "bigserial": 0,
+    "numeric": 1,
+    "real": 2,
+    "double precision": 2,
+}
+
+# A PG source reports the canonical spelling of a type, which the type map
+# leaves untouched because it is already valid PG. The two tables around this
+# one hold the short spelling only, so fold one into the other — otherwise the
+# emitter sees two different types and rewrites columns that need no change.
+_TYPE_ALIASES: Dict[str, str] = {
+    "bpchar": "char",
+    "character": "char",
+    "character varying": "varchar",
+    "bool": "boolean",
+    "int2": "smallint",
+    "int4": "integer",
+    "int8": "bigint",
+    "float4": "real",
+    "float8": "double precision",
+    "decimal": "numeric",
+    "timestamp without time zone": "timestamp",
+    "timestamp with time zone": "timestamptz",
+}
+
+# Inside one of these groups every combination is accepted, both ways.
+_INTERCHANGEABLE_GROUPS = (
+    frozenset({"char", "varchar", "text"}),
+    frozenset({"date", "timestamp", "timestamptz"}),
+)
+
+_TYPE_ARGS_RE = re.compile(r"\s*\(.*\)\s*$")
 
 
 class PostgresSqlEmitter:
@@ -144,8 +192,8 @@ class PostgresSqlEmitter:
             return f"numeric({column.precision},{scale})"
         return target
 
-    def column_definition(self, column: Column) -> str:
-        target_type = self._map_type(column)
+    def column_definition(self, column: Column, override_type: Optional[str] = None) -> str:
+        target_type = override_type or self._map_type(column)
         if column.identity:
             target_type = "serial" if target_type in ("integer", "smallint") else "bigserial"
         parts = [self.quote_identifier(column.name), target_type]
@@ -154,6 +202,104 @@ class PostgresSqlEmitter:
         if column.default is not None and not column.identity:
             parts.append(f"DEFAULT {self._translate_default(column.default, target_type)}")
         return " ".join(parts)
+
+    # ---- foreign key type alignment ---------------------------------------
+
+    @staticmethod
+    def _base_type(sql_type: str) -> str:
+        """Type name without its arguments, folded to its short spelling."""
+        base = _TYPE_ARGS_RE.sub("", sql_type).strip().lower()
+        return _TYPE_ALIASES.get(base, base)
+
+    @classmethod
+    def _key_accepts(cls, key_type: str, child_type: str) -> bool:
+        """Does PG accept a column of ``child_type`` referencing ``key_type``?"""
+        key = cls._base_type(key_type)
+        child = cls._base_type(child_type)
+        if key == child:
+            return True
+        key_rank = _NUMERIC_RANK.get(key)
+        child_rank = _NUMERIC_RANK.get(child)
+        if key_rank is not None and child_rank is not None:
+            return child_rank <= key_rank
+        return any(key in group and child in group for group in _INTERCHANGEABLE_GROUPS)
+
+    @staticmethod
+    def _reference_of(table: Table, column_name: str) -> Optional[Tuple[str, str, str]]:
+        """Referenced ``(schema, table, column)`` for one local column.
+
+        Constraints are table-level and may be composite: the n-th local column
+        references the n-th referenced column. A column named by two
+        constraints keeps the first, which is the only one we could align on.
+        """
+        for foreign_key in table.foreign_keys:
+            for local, referenced in zip(foreign_key.columns, foreign_key.ref_columns):
+                if local == column_name:
+                    return (foreign_key.schema, foreign_key.table, referenced)
+        return None
+
+    @staticmethod
+    def _resolve_reference(
+        database: Database, reference: Tuple[str, str, str]
+    ) -> Optional[Tuple[Table, Column]]:
+        schema_name, table_name, column_name = reference
+        schema = database.schemas.get(schema_name)
+        if schema is None:
+            return None
+        table = schema.get_table(table_name)
+        if table is None:
+            return None
+        column = table.get_column(column_name)
+        if column is None:
+            return None
+        return table, column
+
+    def _key_type(
+        self,
+        database: Database,
+        table: Table,
+        column: Column,
+        seen: FrozenSet[Tuple[str, str, str]],
+    ) -> str:
+        """Type a child column needs to reference ``column``.
+
+        Follows the chain when the key is itself a foreign key, and returns the
+        storage type of an identity key: the key reads ``serial`` in the DDL but
+        a column that references it must be declared ``integer``. ``seen`` stops
+        a cycle, for example a table that references itself.
+        """
+        reference = self._reference_of(table, column.name)
+        if reference is not None and reference not in seen:
+            resolved = self._resolve_reference(database, reference)
+            if resolved is not None:
+                key_table, key_column = resolved
+                return self._key_type(database, key_table, key_column, seen | {reference})
+        mapped = self._map_type(column)
+        if column.identity:
+            return "integer" if mapped in ("integer", "smallint") else "bigint"
+        return mapped
+
+    def _aligned_type(self, database: Database, table: Table, column: Column) -> Optional[str]:
+        """Type that replaces the declared one so the foreign key can be created.
+
+        ``None`` when the declared type is already accepted by the referenced
+        key, which covers every column that carries no foreign key, and when
+        the reference resolves to nothing because a filter removed the table or
+        the column.
+        """
+        if column.identity:
+            return None
+        reference = self._reference_of(table, column.name)
+        if reference is None:
+            return None
+        resolved = self._resolve_reference(database, reference)
+        if resolved is None:
+            return None
+        key_table, key_column = resolved
+        key_type = self._key_type(database, key_table, key_column, frozenset({reference}))
+        if self._key_accepts(key_type, self._map_type(column)):
+            return None
+        return key_type
 
     @staticmethod
     def _strip_wrapping_parens(expr: str) -> str:
@@ -258,7 +404,8 @@ class PostgresSqlEmitter:
                 qualified = self.table_name(schema, table)
                 sink.write(f"CREATE TABLE {qualified} (\n")
                 column_lines = [
-                    f"    {self.column_definition(col)}" for col in table.columns.values()
+                    f"    {self.column_definition(col, self._aligned_type(database, table, col))}"
+                    for col in table.columns.values()
                 ]
                 pk_cols = table.primary_key_columns()
                 if pk_cols:
