@@ -6,6 +6,6 @@ flake8==7.3.0
 import-linter==2.13
 isort==5.13.2
 mypy==1.19.1
-pylint==3.3.9
+pylint==4.0.8
 types-PyYAML==6.0.12.20250915
 types-setuptools==75.5.0.20241116
