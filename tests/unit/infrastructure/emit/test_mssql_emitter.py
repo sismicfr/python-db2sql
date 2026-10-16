@@ -366,3 +366,66 @@ class TestRowFormatting:
             emitter.emit_data_copy(schema, table, [(1, "a")], _Sink())
             emitter.emit_data_copy(schema, table, [(2, "b")], _Sink())
         assert sum(1 for w in caught if "COPY is Postgres-only" in str(w.message)) == 1
+
+
+class TestComments:
+    def _db(self) -> Database:
+        db = Database(name="main")
+        sales = Schema(name="Sales", comment="Orders and customers")
+        customer = Table(name="Customer", comment="People who buy")
+        customer.add_column(Column(name="Id", type="int", constraint="PRIMARY KEY"))
+        customer.add_column(Column(name="Name", type="text", comment="Name, as it's written"))
+        sales.add_table(customer)
+        db.add_schema(sales)
+        return db
+
+    def test_schema_comment_is_updated_or_added(self) -> None:
+        emitter = MssqlSqlEmitter(preserve_case=True)
+        sink = _Sink()
+        emitter.emit_schemas(self._db(), sink)
+        arguments = (
+            "@name = N'MS_Description', @value = N'Orders and customers', "
+            "@level0type = N'SCHEMA', @level0name = N'Sales'"
+        )
+        assert sink.text.endswith(
+            "IF EXISTS (SELECT 1 FROM sys.fn_listextendedproperty("
+            "N'MS_Description', N'SCHEMA', N'Sales', NULL, NULL, NULL, NULL))\n"
+            f"    EXEC sys.sp_updateextendedproperty {arguments};\n"
+            "ELSE\n"
+            f"    EXEC sys.sp_addextendedproperty {arguments};\n"
+            "\n"
+        )
+        assert sink.boundaries == 2
+
+    def test_table_and_column_comments_follow_create_table(self) -> None:
+        emitter = MssqlSqlEmitter(preserve_case=False, schema_mapping={"Sales": "dbo"})
+        sink = _Sink()
+        emitter.emit_tables(self._db(), sink)
+        comments = sink.text.split(");\n\n", 1)[1]
+        assert comments == (
+            "EXEC sys.sp_addextendedproperty @name = N'MS_Description', "
+            "@value = N'People who buy', "
+            "@level0type = N'SCHEMA', @level0name = N'dbo', "
+            "@level1type = N'TABLE', @level1name = N'customer';\n"
+            "EXEC sys.sp_addextendedproperty @name = N'MS_Description', "
+            "@value = N'Name, as it''s written', "
+            "@level0type = N'SCHEMA', @level0name = N'dbo', "
+            "@level1type = N'TABLE', @level1name = N'customer', "
+            "@level2type = N'COLUMN', @level2name = N'name';\n"
+            "\n"
+        )
+        assert sink.boundaries == 3
+
+    def test_nothing_is_emitted_without_comments(self) -> None:
+        emitter = MssqlSqlEmitter(preserve_case=True)
+        db = Database(name="main")
+        schema = Schema(name="dbo")
+        table = Table(name="t")
+        table.add_column(Column(name="id", type="int"))
+        schema.add_table(table)
+        db.add_schema(schema)
+        sink = _Sink()
+        emitter.emit_schemas(db, sink)
+        emitter.emit_tables(db, sink)
+        assert "extendedproperty" not in sink.text
+        assert sink.text.endswith(");\n\n")

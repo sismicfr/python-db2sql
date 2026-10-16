@@ -20,6 +20,7 @@ class Column:
     computed_definition: Optional[str] = None
     identity: bool = False
     constraint: Optional[str] = None
+    comment: Optional[str] = None
 
     @property
     def is_primary_key(self) -> bool:

@@ -359,15 +359,29 @@ class PostgresSqlEmitter:
         sink.write("COMMIT;\n")
         sink.boundary()
 
+    @staticmethod
+    def _string_literal(value: str) -> str:
+        escaped = value.replace("'", "''")
+        return f"'{escaped}'"
+
+    def _emit_comment(self, sink: OutputSink, target: str, comment: Optional[str]) -> None:
+        if comment is None:
+            return
+        sink.write(f"COMMENT ON {target} IS {self._string_literal(comment)};\n")
+        sink.boundary()
+
     def emit_schemas(self, database: Database, sink: OutputSink) -> None:
-        emitted = set()
+        targets: Dict[str, Optional[str]] = {}
         for schema in database.schemas.values():
             target = self._schema_mapping.get(schema.name, schema.name)
-            if target in emitted:
-                continue
-            emitted.add(target)
-            sink.write(f"CREATE SCHEMA IF NOT EXISTS {self.quote_identifier(target)};\n")
+            # Several source schemas can map to one target: the first comment wins.
+            if targets.get(target) is None:
+                targets[target] = schema.comment
+        for target, comment in targets.items():
+            quoted = self.quote_identifier(target)
+            sink.write(f"CREATE SCHEMA IF NOT EXISTS {quoted};\n")
             sink.boundary()
+            self._emit_comment(sink, f"SCHEMA {quoted}", comment)
         sink.write("\n")
 
     def emit_drops(self, database: Database, sink: OutputSink) -> None:
@@ -414,6 +428,17 @@ class PostgresSqlEmitter:
                 sink.write(",\n".join(column_lines))
                 sink.write("\n);\n\n")
                 sink.boundary()
+                self._emit_table_comments(schema, table, sink)
+
+    def _emit_table_comments(self, schema: Schema, table: Table, sink: OutputSink) -> None:
+        qualified = self.table_name(schema, table)
+        self._emit_comment(sink, f"TABLE {qualified}", table.comment)
+        commented = [col for col in table.columns.values() if col.comment is not None]
+        for column in commented:
+            target = f"COLUMN {qualified}.{self.quote_identifier(column.name)}"
+            self._emit_comment(sink, target, column.comment)
+        if table.comment is not None or commented:
+            sink.write("\n")
 
     def emit_foreign_keys(self, database: Database, sink: OutputSink) -> None:
         for schema in database.schemas.values():

@@ -16,6 +16,7 @@ class Schema:
 
     name: str
     tables: Dict[str, Table] = field(default_factory=dict)
+    comment: Optional[str] = None
 
     def add_table(self, table: Table) -> None:
         if table.name in self.tables:

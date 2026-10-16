@@ -40,7 +40,10 @@ def _full_plan() -> FakeSession:
     session = FakeSession()
     session.add(
         "FROM INFORMATION_SCHEMA.TABLES",
-        [FakeRow(TABLE_NAME="author"), FakeRow(TABLE_NAME="book")],
+        [
+            FakeRow(TABLE_NAME="author", TABLE_COMMENT="Book authors"),
+            FakeRow(TABLE_NAME="book", TABLE_COMMENT=""),
+        ],
     )
     session.add(
         "FROM INFORMATION_SCHEMA.COLUMNS",
@@ -55,6 +58,7 @@ def _full_plan() -> FakeSession:
                 NUMERIC_PRECISION=10,
                 NUMERIC_SCALE=0,
                 EXTRA="auto_increment",
+                COLUMN_COMMENT="",
             ),
             FakeRow(
                 TABLE_NAME="author",
@@ -66,6 +70,7 @@ def _full_plan() -> FakeSession:
                 NUMERIC_PRECISION=None,
                 NUMERIC_SCALE=None,
                 EXTRA="",
+                COLUMN_COMMENT="Full name",
             ),
             FakeRow(
                 TABLE_NAME="book",
@@ -77,6 +82,7 @@ def _full_plan() -> FakeSession:
                 NUMERIC_PRECISION=10,
                 NUMERIC_SCALE=0,
                 EXTRA="",
+                COLUMN_COMMENT="",
             ),
             FakeRow(
                 TABLE_NAME="author",
@@ -88,6 +94,7 @@ def _full_plan() -> FakeSession:
                 NUMERIC_PRECISION=None,
                 NUMERIC_SCALE=None,
                 EXTRA="",
+                COLUMN_COMMENT="",
             ),
             FakeRow(
                 TABLE_NAME="book",
@@ -99,6 +106,7 @@ def _full_plan() -> FakeSession:
                 NUMERIC_PRECISION=None,
                 NUMERIC_SCALE=None,
                 EXTRA="",
+                COLUMN_COMMENT="",
             ),
             # Belongs to a missing table — should be ignored gracefully
             FakeRow(
@@ -111,6 +119,7 @@ def _full_plan() -> FakeSession:
                 NUMERIC_PRECISION=10,
                 NUMERIC_SCALE=0,
                 EXTRA="",
+                COLUMN_COMMENT="",
             ),
         ],
     )
@@ -221,6 +230,18 @@ def test_collect_metadata_populates_schema_tables_columns_indexes_fks() -> None:
         ("id", "state"),
     )
     assert book.indexes == {"idx_book_author": ["author_id"]}
+
+
+def test_collect_metadata_keeps_comments_and_reads_empty_as_none() -> None:
+    reader = MySQLSourceReader(_config(dbname="main"), _SilentLogger())
+    install_fake_session(reader, _full_plan())
+
+    schema = reader.collect_metadata().schemas["main"]
+
+    assert schema.tables["author"].comment == "Book authors"
+    assert schema.tables["author"].columns["name"].comment == "Full name"
+    assert schema.tables["book"].comment is None
+    assert schema.tables["author"].columns["id"].comment is None
 
 
 def test_collect_metadata_wraps_unexpected_exception() -> None:

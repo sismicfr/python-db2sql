@@ -69,21 +69,24 @@ class MySQLSourceReader:
     def _read_tables(self, database: Database) -> None:
         rows = self._ensure_session().execute(
             text(
-                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+                "SELECT TABLE_NAME, TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES "
                 "WHERE TABLE_SCHEMA = :schema AND TABLE_TYPE = 'BASE TABLE' "
                 "ORDER BY TABLE_NAME"
             ),
             {"schema": self._database_name},
         )
         for row in rows:
-            database.add_table(self._database_name, Table(row.TABLE_NAME))
+            database.add_table(
+                self._database_name,
+                Table(row.TABLE_NAME, comment=row.TABLE_COMMENT or None),
+            )
 
     def _read_columns(self, database: Database) -> None:
         rows = self._ensure_session().execute(
             text(
                 "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_DEFAULT, IS_NULLABLE, "
                 "DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, "
-                "NUMERIC_SCALE, EXTRA "
+                "NUMERIC_SCALE, EXTRA, COLUMN_COMMENT "
                 "FROM INFORMATION_SCHEMA.COLUMNS "
                 "WHERE TABLE_SCHEMA = :schema "
                 "ORDER BY TABLE_NAME, ORDINAL_POSITION"
@@ -102,6 +105,8 @@ class MySQLSourceReader:
                 char_length=row.CHARACTER_MAXIMUM_LENGTH or -1,
                 precision=row.NUMERIC_PRECISION,
                 scale=row.NUMERIC_SCALE,
+                # MySQL reports "no comment" as an empty string, not NULL.
+                comment=row.COLUMN_COMMENT or None,
             )
             if row.EXTRA and "auto_increment" in row.EXTRA.lower():
                 column.identity = True

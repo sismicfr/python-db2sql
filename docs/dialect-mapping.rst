@@ -302,6 +302,58 @@ the literal. ANSI-compatible keywords (``CURRENT_USER``, ``SESSION_USER``,
 Anything not in the table is passed through unchanged.
 
 
+Comments
+--------
+
+The comments of the source schemas, tables and columns are copied to the
+target, in dump mode and in migrate mode. With ``--on-existing truncate``, no
+DDL is emitted, so no comment is copied.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 25 25 30
+
+   * - Source
+     - Schema
+     - Table
+     - Column
+   * - PostgreSQL
+     - ``COMMENT ON SCHEMA``
+     - ``COMMENT ON TABLE``
+     - ``COMMENT ON COLUMN``
+   * - MSSQL
+     - ``MS_Description`` property
+     - ``MS_Description`` property
+     - ``MS_Description`` property
+   * - MySQL / MariaDB
+     - not read
+     - ``TABLE_COMMENT``
+     - ``COLUMN_COMMENT``
+   * - Oracle
+     - none in Oracle
+     - ``ALL_TAB_COMMENTS``
+     - ``ALL_COL_COMMENTS``
+   * - SQLite
+     - none in SQLite
+     - none in SQLite
+     - none in SQLite
+
+The PostgreSQL target receives ``COMMENT ON`` statements. The MSSQL target
+receives ``sys.sp_addextendedproperty`` calls for the ``MS_Description``
+property, which SSMS shows as the description. A schema can exist before the
+script runs, so its description is updated if it exists and added if not.
+
+Two rules apply:
+
+* The comment ``standard public schema``, which PostgreSQL puts on ``public``,
+  is not copied. ``COMMENT ON SCHEMA`` needs the owner of the schema, and the
+  role that replays the dump is usually not the owner of ``public``.
+* When ``schema_mapping`` sends several source schemas to one target schema,
+  the comment of the first source schema that has a comment is used.
+
+A table synthesized from a view export has no comment.
+
+
 Overriding the mapping
 ----------------------
 

@@ -139,6 +139,8 @@ class OracleSourceReader:
             self._read_indexes(database)
             self._logger.info("reading identity columns ...")
             self._read_identity_columns(database)
+            self._logger.info("reading comments ...")
+            self._read_comments(database)
         except SourceReaderError:
             raise
         except Exception as exc:
@@ -360,6 +362,45 @@ class OracleSourceReader:
             column = table.get_column(row.column_name)
             if column is not None:
                 column.identity = True
+
+    def _read_comments(self, database: Database) -> None:
+        """Oracle has no comment on a schema, only on tables and columns."""
+        owner = self._schema_filter
+        params: Dict[str, Any] = {}
+        if owner:
+            owner_clause = "OWNER = :owner"
+            params["owner"] = owner
+        else:
+            owner_clause = self._excluded_schemas_sql("OWNER")
+        session = self._ensure_session()
+        tables = session.execute(
+            text(
+                "SELECT OWNER, TABLE_NAME, COMMENTS "
+                "FROM ALL_TAB_COMMENTS "
+                f"WHERE {owner_clause} "
+                "  AND TABLE_TYPE = 'TABLE' AND COMMENTS IS NOT NULL"
+            ),
+            params,
+        )
+        for row in tables:
+            table = database.get_table(row.owner, row.table_name)
+            if table is not None:
+                table.comment = row.comments
+        columns = session.execute(
+            text(
+                "SELECT OWNER, TABLE_NAME, COLUMN_NAME, COMMENTS "
+                "FROM ALL_COL_COMMENTS "
+                f"WHERE {owner_clause} AND COMMENTS IS NOT NULL"
+            ),
+            params,
+        )
+        for row in columns:
+            table = database.get_table(row.owner, row.table_name)
+            if table is None:
+                continue
+            column = table.get_column(row.column_name)
+            if column is not None:
+                column.comment = row.comments
 
     def iter_rows(self, schema: str, table: Table, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
         session = self._ensure_session()

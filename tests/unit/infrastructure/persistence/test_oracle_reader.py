@@ -487,3 +487,32 @@ def test_collect_metadata_wraps_unexpected_exception_post_schemas() -> None:
     with pytest.raises(SourceReaderError) as exc:
         reader.collect_metadata()
     assert "failed to collect database information" in str(exc.value)
+
+
+def test_collect_metadata_reads_table_and_column_comments() -> None:
+    reader = _build_reader()
+    session = _full_plan()
+    session.add(
+        "FROM ALL_TAB_COMMENTS",
+        [
+            FakeRow(owner="HR", table_name="EMP", comments="Employees"),
+            FakeRow(owner="HR", table_name="GHOST", comments="not collected"),
+        ],
+    )
+    session.add(
+        "FROM ALL_COL_COMMENTS",
+        [
+            FakeRow(owner="HR", table_name="EMP", column_name="NAME", comments="Full name"),
+            FakeRow(owner="HR", table_name="EMP", column_name="GONE", comments="x"),
+        ],
+    )
+    install_fake_session(reader, session)
+
+    table = reader.collect_metadata().get_table("HR", "EMP")
+
+    assert table is not None
+    assert table.comment == "Employees"
+    assert table.columns["NAME"].comment == "Full name"
+    assert table.columns["ID"].comment is None
+    queries = " ".join(query for query, _ in session.executed)
+    assert "TABLE_TYPE = 'TABLE'" in queries
