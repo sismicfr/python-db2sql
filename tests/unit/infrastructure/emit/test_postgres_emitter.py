@@ -640,3 +640,75 @@ class TestForeignKeyTypeAlignment:
         emitter = PostgresSqlEmitter(preserve_case=True)
         column = Column(name="client_id", type="varchar", char_length=36, nullable=True)
         assert emitter.column_definition(column) == '"client_id" varchar(36)'
+
+
+class TestComments:
+    def _db(self) -> Database:
+        db = Database(name="main")
+        sales = Schema(name="Sales", comment="Orders and customers")
+        customer = Table(name="Customer", comment="People who buy")
+        customer.add_column(Column(name="Id", type="int", constraint="PRIMARY KEY"))
+        customer.add_column(Column(name="Name", type="text", comment="Name, as it's written"))
+        sales.add_table(customer)
+        db.add_schema(sales)
+        return db
+
+    def test_schema_comment_follows_create_schema(self) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        sink = _Sink()
+        emitter.emit_schemas(self._db(), sink)
+        assert sink.text == (
+            'CREATE SCHEMA IF NOT EXISTS "Sales";\n'
+            "COMMENT ON SCHEMA \"Sales\" IS 'Orders and customers';\n"
+            "\n"
+        )
+        assert sink.boundaries == 2
+
+    def test_table_and_column_comments_follow_create_table(self) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=False)
+        sink = _Sink()
+        emitter.emit_tables(self._db(), sink)
+        comments = sink.text.split(");\n\n", 1)[1]
+        assert comments == (
+            "COMMENT ON TABLE \"sales\".\"customer\" IS 'People who buy';\n"
+            "COMMENT ON COLUMN \"sales\".\"customer\".\"name\" IS 'Name, as it''s written';\n"
+            "\n"
+        )
+        assert sink.boundaries == 3
+
+    def test_mapped_schema_carries_the_comment(self) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=True, schema_mapping={"Sales": "public"})
+        sink = _Sink()
+        db = self._db()
+        emitter.emit_schemas(db, sink)
+        emitter.emit_tables(db, sink)
+        assert "COMMENT ON SCHEMA \"public\" IS 'Orders and customers';" in sink.text
+        assert 'COMMENT ON TABLE "public"."Customer"' in sink.text
+
+    def test_first_comment_wins_when_two_schemas_share_a_target(self) -> None:
+        emitter = PostgresSqlEmitter(
+            preserve_case=True, schema_mapping={"a": "common", "b": "common", "c": "common"}
+        )
+        db = Database(name="main")
+        db.add_schema(Schema(name="a"))
+        db.add_schema(Schema(name="b", comment="from b"))
+        db.add_schema(Schema(name="c", comment="from c"))
+        sink = _Sink()
+        emitter.emit_schemas(db, sink)
+        assert sink.text.count("CREATE SCHEMA") == 1
+        assert sink.text.count("COMMENT ON") == 1
+        assert "IS 'from b'" in sink.text
+
+    def test_nothing_is_emitted_without_comments(self) -> None:
+        emitter = PostgresSqlEmitter(preserve_case=True)
+        db = Database(name="main")
+        schema = Schema(name="public")
+        table = Table(name="t")
+        table.add_column(Column(name="id", type="int"))
+        schema.add_table(table)
+        db.add_schema(schema)
+        sink = _Sink()
+        emitter.emit_schemas(db, sink)
+        emitter.emit_tables(db, sink)
+        assert "COMMENT" not in sink.text
+        assert sink.text.endswith(");\n\n")

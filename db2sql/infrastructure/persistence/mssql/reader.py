@@ -59,6 +59,8 @@ class MSSQLSourceReader:
             self._read_foreign_keys(database)
             self._logger.info("reading indexes")
             self._read_indexes(database)
+            self._logger.info("reading comments")
+            self._read_comments(database)
         except Exception as exception:
             self._logger.error(str(exception))
             raise SourceReaderError("failed to collect database information") from exception
@@ -276,3 +278,48 @@ ORDER BY t.name, ind.name, ind.index_id, ic.index_column_id
             table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
             if table:
                 table.add_index(row.INDEX_NAME, row.COLUMN_NAME)
+
+    def _read_comments(self, database: Database) -> None:
+        # SQL Server has no COMMENT ON. SSMS and most tools store the comment
+        # as the MS_Description extended property: class 3 on a schema, class 1
+        # on a table (minor_id 0) or on one of its columns (minor_id = column_id).
+        r: engine.Result[Any] = self._ensure_session().execute(text("""
+SELECT s.name AS TABLE_SCHEMA,
+  NULL AS TABLE_NAME,
+  NULL AS COLUMN_NAME,
+  CAST(ep.value AS NVARCHAR(MAX)) AS COMMENT
+FROM sys.extended_properties ep
+INNER JOIN sys.schemas s
+  ON ep.major_id = s.schema_id
+WHERE ep.class = 3
+  AND ep.name = 'MS_Description'
+UNION ALL
+SELECT s.name, t.name, c.name, CAST(ep.value AS NVARCHAR(MAX))
+FROM sys.extended_properties ep
+INNER JOIN sys.tables t
+  ON ep.major_id = t.object_id
+INNER JOIN sys.schemas s
+  ON s.schema_id = t.schema_id
+LEFT JOIN sys.columns c
+  ON c.object_id = t.object_id
+  AND c.column_id = ep.minor_id
+WHERE ep.class = 1
+  AND ep.name = 'MS_Description'
+  AND (ep.minor_id = 0 OR c.column_id IS NOT NULL)
+        """))
+
+        for row in r:
+            if row.TABLE_NAME is None:
+                schema = database.get_schema(row.TABLE_SCHEMA)
+                if schema is not None:
+                    schema.comment = row.COMMENT
+                continue
+            table = database.get_table(row.TABLE_SCHEMA, row.TABLE_NAME)
+            if table is None:
+                continue
+            if row.COLUMN_NAME is None:
+                table.comment = row.COMMENT
+                continue
+            column = table.get_column(row.COLUMN_NAME)
+            if column is not None:
+                column.comment = row.COMMENT

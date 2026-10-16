@@ -290,3 +290,101 @@ def test_ensure_session_is_cached() -> None:
 
 def test_build_reader_returns_instance() -> None:
     assert isinstance(build_reader(_config(dbname="d"), _StubLogger()), PostgresSourceReader)
+
+
+def test_collect_metadata_reads_schema_table_and_column_comments() -> None:
+    session = _populated_session()
+    session.add(
+        "FROM pg_description",
+        [
+            FakeRow(
+                schema_name="other",
+                table_name=None,
+                column_number=0,
+                column_name=None,
+                description="Things that are not books",
+            ),
+            FakeRow(
+                schema_name="public",
+                table_name="author",
+                column_number=0,
+                column_name=None,
+                description="Book authors",
+            ),
+            FakeRow(
+                schema_name="public",
+                table_name="author",
+                column_number=2,
+                column_name="state",
+                description="It's an 'A' or an 'I'",
+            ),
+            # A comment left on a dropped column: no attribute matches it.
+            FakeRow(
+                schema_name="public",
+                table_name="book",
+                column_number=7,
+                column_name=None,
+                description="orphan",
+            ),
+            FakeRow(
+                schema_name="ghost",
+                table_name="x",
+                column_number=0,
+                column_name=None,
+                description="table not collected",
+            ),
+        ],
+    )
+    reader = PostgresSourceReader(_config(dbname="d"), _StubLogger())
+    install_fake_session(reader, session)
+
+    db = reader.collect_metadata()
+
+    assert db.schemas["other"].comment == "Things that are not books"
+    author = db.schemas["public"].tables["author"]
+    assert author.comment == "Book authors"
+    assert author.columns["state"].comment == "It's an 'A' or an 'I'"
+    assert author.columns["id"].comment is None
+    book = db.schemas["public"].tables["book"]
+    assert book.comment is None
+    assert all(column.comment is None for column in book.columns.values())
+
+
+def test_collect_metadata_skips_the_builtin_comment_of_public() -> None:
+    session = _populated_session()
+    session.add(
+        "FROM pg_description",
+        [
+            FakeRow(
+                schema_name="public",
+                table_name=None,
+                column_number=0,
+                column_name=None,
+                description="standard public schema",
+            ),
+        ],
+    )
+    reader = PostgresSourceReader(_config(dbname="d"), _StubLogger())
+    install_fake_session(reader, session)
+
+    assert reader.collect_metadata().schemas["public"].comment is None
+
+
+def test_collect_metadata_keeps_the_builtin_text_on_another_schema() -> None:
+    session = _populated_session()
+    session.add(
+        "FROM pg_description",
+        [
+            FakeRow(
+                schema_name="other",
+                table_name=None,
+                column_number=0,
+                column_name=None,
+                description="standard public schema",
+            ),
+        ],
+    )
+    reader = PostgresSourceReader(_config(dbname="d"), _StubLogger())
+    install_fake_session(reader, session)
+
+    assert reader.collect_metadata().schemas["other"].comment == "standard public schema"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import warnings
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 from db2sql.application.ports import OutputSink
 from db2sql.domain.model import Column, Database, Schema, Table
@@ -246,13 +246,34 @@ class MssqlSqlEmitter:
         sink.write("COMMIT TRANSACTION;\n")
         sink.boundary()
 
+    @staticmethod
+    def _string_literal(value: str) -> str:
+        escaped = value.replace("'", "''")
+        return f"N'{escaped}'"
+
+    def _description_arguments(self, comment: str, levels: Iterable[Tuple[str, str]]) -> str:
+        """Arguments of ``sp_addextendedproperty`` for one ``MS_Description``.
+
+        The level names are the identifiers as created, not quoted: the
+        procedure takes them as plain strings.
+        """
+        arguments = [
+            "@name = N'MS_Description'",
+            f"@value = {self._string_literal(comment)}",
+        ]
+        for index, (level_type, level_name) in enumerate(levels):
+            arguments.append(f"@level{index}type = N'{level_type}'")
+            arguments.append(f"@level{index}name = {self._string_literal(level_name)}")
+        return ", ".join(arguments)
+
     def emit_schemas(self, database: Database, sink: OutputSink) -> None:
-        emitted = set()
+        targets: Dict[str, Optional[str]] = {}
         for schema in database.schemas.values():
             target = self._schema_mapping.get(schema.name, schema.name)
-            if target in emitted:
-                continue
-            emitted.add(target)
+            # Several source schemas can map to one target: the first comment wins.
+            if targets.get(target) is None:
+                targets[target] = schema.comment
+        for target, comment in targets.items():
             quoted = self.quote_identifier(target)
             # CREATE SCHEMA must be the first statement in its batch — wrap in EXEC.
             literal = target.replace("'", "''")
@@ -261,7 +282,23 @@ class MssqlSqlEmitter:
                 f"    EXEC('CREATE SCHEMA {quoted}');\n"
             )
             sink.boundary()
+            if comment is not None:
+                self._emit_schema_comment(target, comment, sink)
         sink.write("\n")
+
+    def _emit_schema_comment(self, target: str, comment: str, sink: OutputSink) -> None:
+        # The schema can exist before the script runs (``dbo`` always does) and
+        # already carry a description: sp_addextendedproperty then fails.
+        name = self._string_literal(self._normalize(target))
+        arguments = self._description_arguments(comment, [("SCHEMA", self._normalize(target))])
+        sink.write(
+            "IF EXISTS (SELECT 1 FROM sys.fn_listextendedproperty("
+            f"N'MS_Description', N'SCHEMA', {name}, NULL, NULL, NULL, NULL))\n"
+            f"    EXEC sys.sp_updateextendedproperty {arguments};\n"
+            "ELSE\n"
+            f"    EXEC sys.sp_addextendedproperty {arguments};\n"
+        )
+        sink.boundary()
 
     def emit_drops(self, database: Database, sink: OutputSink) -> None:
         # Native ``DROP TABLE IF EXISTS`` syntax — requires SQL Server 2016+.
@@ -309,6 +346,30 @@ class MssqlSqlEmitter:
                 sink.write(",\n".join(column_lines))
                 sink.write("\n);\n\n")
                 sink.boundary()
+                self._emit_table_comments(schema, table, sink)
+
+    def _emit_table_comments(self, schema: Schema, table: Table, sink: OutputSink) -> None:
+        # The table is created by this script, so it has no description yet.
+        levels = [
+            ("SCHEMA", self._normalize(self._schema_mapping.get(schema.name, schema.name))),
+            ("TABLE", self._normalize(table.name)),
+        ]
+        emitted = False
+        if table.comment is not None:
+            arguments = self._description_arguments(table.comment, levels)
+            sink.write(f"EXEC sys.sp_addextendedproperty {arguments};\n")
+            sink.boundary()
+            emitted = True
+        for column in table.columns.values():
+            if column.comment is None:
+                continue
+            column_levels = levels + [("COLUMN", self._normalize(column.name))]
+            arguments = self._description_arguments(column.comment, column_levels)
+            sink.write(f"EXEC sys.sp_addextendedproperty {arguments};\n")
+            sink.boundary()
+            emitted = True
+        if emitted:
+            sink.write("\n")
 
     def emit_foreign_keys(self, database: Database, sink: OutputSink) -> None:
         for schema in database.schemas.values():

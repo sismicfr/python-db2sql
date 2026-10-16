@@ -20,6 +20,7 @@ class Table:
     indexes: Dict[str, List[str]] = field(default_factory=dict)
     foreign_keys: List[ForeignKey] = field(default_factory=list)
     source_query: Optional[str] = None
+    comment: Optional[str] = None
 
     def add_column(self, column: Column) -> None:
         if column.name in self.columns:

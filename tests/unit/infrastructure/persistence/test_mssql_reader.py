@@ -324,3 +324,32 @@ def test_ensure_session_is_cached() -> None:
 
 def test_build_reader_returns_instance() -> None:
     assert isinstance(build_reader(_config(dbname="d"), _StubLogger()), MSSQLSourceReader)
+
+
+def test_collect_metadata_reads_ms_description_properties() -> None:
+    session = _populated_session()
+    session.add(
+        "sys.extended_properties",
+        [
+            FakeRow(TABLE_SCHEMA="audit", TABLE_NAME=None, COLUMN_NAME=None, COMMENT="Audit trail"),
+            FakeRow(TABLE_SCHEMA="sales", TABLE_NAME=None, COLUMN_NAME=None, COMMENT="no table"),
+            FakeRow(
+                TABLE_SCHEMA="dbo", TABLE_NAME="Customer", COLUMN_NAME=None, COMMENT="Customers"
+            ),
+            FakeRow(TABLE_SCHEMA="dbo", TABLE_NAME="Customer", COLUMN_NAME="Id", COMMENT="Key"),
+            FakeRow(TABLE_SCHEMA="dbo", TABLE_NAME="Customer", COLUMN_NAME="Gone", COMMENT="x"),
+            FakeRow(TABLE_SCHEMA="dbo", TABLE_NAME="Ghost", COLUMN_NAME=None, COMMENT="x"),
+        ],
+    )
+    reader = MSSQLSourceReader(_config(dbname="d"), _StubLogger())
+    install_fake_session(reader, session)
+
+    db = reader.collect_metadata()
+
+    assert db.schemas["audit"].comment == "Audit trail"
+    assert db.schemas["dbo"].comment is None
+    assert "sales" not in db.schemas
+    customer = db.schemas["dbo"].tables["Customer"]
+    assert customer.comment == "Customers"
+    assert customer.columns["Id"].comment == "Key"
+    assert db.schemas["dbo"].tables["Order"].comment is None

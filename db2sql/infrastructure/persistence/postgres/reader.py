@@ -19,6 +19,7 @@ from db2sql.infrastructure.persistence.foreign_keys import (
 from db2sql.infrastructure.url import build_url, redact_url
 
 _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")
+_PUBLIC_SCHEMA_DEFAULT_COMMENT = ("public", "standard public schema")
 
 
 class PostgresSourceReader:
@@ -50,6 +51,7 @@ class PostgresSourceReader:
             self._read_constraints(database)
             self._read_foreign_keys(database)
             self._read_indexes(database)
+            self._read_comments(database)
         except Exception as exc:
             self._logger.error(str(exc))
             raise SourceReaderError("failed to collect database information") from exc
@@ -174,6 +176,49 @@ class PostgresSourceReader:
             table = database.get_table(row.schema_name, row.table_name)
             if table:
                 table.add_index(row.index_name, row.column_name)
+
+    def _read_comments(self, database: Database) -> None:
+        # One row per COMMENT ON: objsubid 0 is the object itself, a positive
+        # objsubid is the attnum of a column of that table.
+        rows = self._ensure_session().execute(
+            text(
+                "SELECT n.nspname AS schema_name, NULL AS table_name, "
+                "       0 AS column_number, NULL AS column_name, d.description "
+                "FROM pg_description d "
+                "JOIN pg_namespace n ON n.oid = d.objoid "
+                "WHERE d.classoid = 'pg_namespace'::regclass "
+                f"  AND n.nspname NOT IN {_SYSTEM_SCHEMAS} "
+                "UNION ALL "
+                "SELECT n.nspname, c.relname, d.objsubid, a.attname, d.description "
+                "FROM pg_description d "
+                "JOIN pg_class c ON c.oid = d.objoid "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "LEFT JOIN pg_attribute a "
+                "  ON a.attrelid = c.oid AND a.attnum = d.objsubid "
+                "WHERE d.classoid = 'pg_class'::regclass "
+                "  AND c.relkind IN ('r', 'p') "
+                f"  AND n.nspname NOT IN {_SYSTEM_SCHEMAS}"
+            )
+        )
+        for row in rows:
+            if row.table_name is None:
+                schema = database.get_schema(row.schema_name)
+                # PG ships ``public`` with this comment. Copying it would make
+                # the dump COMMENT ON a schema that the target role usually
+                # does not own, which fails the whole transaction.
+                builtin = (row.schema_name, row.description) == _PUBLIC_SCHEMA_DEFAULT_COMMENT
+                if schema is not None and not builtin:
+                    schema.comment = row.description
+                continue
+            table = database.get_table(row.schema_name, row.table_name)
+            if table is None:
+                continue
+            if row.column_number == 0:
+                table.comment = row.description
+                continue
+            column = table.get_column(row.column_name) if row.column_name else None
+            if column is not None:
+                column.comment = row.description
 
     def iter_rows(self, schema: str, table: Table, limit: int = -1) -> Iterator[Tuple[Any, ...]]:
         session = self._ensure_session()
